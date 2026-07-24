@@ -1,0 +1,42 @@
+name: Go CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Check formatting
+        run: |
+          test -z "$(gofmt -l .)" || \
+          (echo "Code is not formatted"; gofmt -l .; exit 1)
+
+      - name: Go Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...

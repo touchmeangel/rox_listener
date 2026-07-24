@@ -1,0 +1,37 @@
+project_name: rox
+
+builds:
+  - id: rox
+    main: ./cmd/rox
+    binary: rox
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: rox
+    ids: [rox]
+    formats: [tar.gz]
+    name_template: "rox_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: touchmeangel
+    name: rox_listener

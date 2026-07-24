@@ -1,0 +1,45 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type Config struct {
+	AMQPURL                 string
+	QueueName               string
+	Runtime                 string // containerd runtime shim (e.g. "runc", "kata", "gvisor"); "" = engine default
+	MaxConcurrentContainers int
+}
+
+func LoadConfig() (Config, error) {
+	cfg := Config{
+		AMQPURL:   os.Getenv("AMQP_URL"),
+		QueueName: os.Getenv("AMQP_QUEUE_NAME"),
+		Runtime:   os.Getenv("CONTAINER_RUNTIME"), // optional — empty is a valid default
+	}
+
+	var missing []string
+	if cfg.AMQPURL == "" {
+		missing = append(missing, "AMQP_URL")
+	}
+	if cfg.QueueName == "" {
+		missing = append(missing, "AMQP_QUEUE_NAME")
+	}
+
+	raw := os.Getenv("MAX_CONCURRENT_CONTAINERS")
+	if raw == "" {
+		missing = append(missing, "MAX_CONCURRENT_CONTAINERS")
+	} else if n, err := strconv.Atoi(raw); err != nil || n <= 0 {
+		return cfg, fmt.Errorf("MAX_CONCURRENT_CONTAINERS must be a positive integer, got %q", raw)
+	} else {
+		cfg.MaxConcurrentContainers = n
+	}
+
+	if len(missing) > 0 {
+		return cfg, fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
+	}
+	return cfg, nil
+}
