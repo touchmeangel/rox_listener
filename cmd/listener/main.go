@@ -13,6 +13,7 @@ import (
 	"github.com/touchmeangel/rox_listener/config"
 	"github.com/touchmeangel/rox_listener/containerd"
 	"github.com/touchmeangel/rox_listener/rabbitworker"
+	"github.com/touchmeangel/rox_listener/taskrunner"
 )
 
 func main() {
@@ -23,21 +24,25 @@ func main() {
 		return
 	}
 
+	client, err := containerd.New()
+	if err != nil {
+		logger.Error("containerd client init failed", "error", err)
+		return
+	}
+	defer client.Close()
+
 	w := rabbitworker.New(
 		cfg.AMQPURL,
 		cfg.QueueName,
 		rabbitworker.WithLogger(logger),
+		rabbitworker.WithPrefetch(cfg.MaxConcurrentContainers),
 	)
-	client, err := containerd.New()
-	if err != nil {
-		logger.Error("containerd creation exited with error", "error", err)
-		return
-	}
-	w.On("coordinator", func(ctx context.Context, data json.RawMessage) error {
-		client.Run(ctx, containerd.RunSpec{
-			Runtime: ,
-		})
-		return nil
+
+	w.On("coordinator", func(ctx context.Context, data json.RawMessage) (json.RawMessage, error) {
+		return taskrunner.RunCoordinator(ctx, client, cfg.Runtime, data)
+	})
+	w.On("worker", func(ctx context.Context, data json.RawMessage) (json.RawMessage, error) {
+		return taskrunner.RunWorker(ctx, client, cfg.Runtime, data)
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

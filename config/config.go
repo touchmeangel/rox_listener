@@ -10,7 +10,7 @@ import (
 type Config struct {
 	AMQPURL                 string
 	QueueName               string
-	Runtime                 string // containerd runtime shim (e.g. "runc", "kata", "gvisor"); "" = engine default
+	Runtime                 string
 	MaxConcurrentContainers int
 }
 
@@ -18,7 +18,7 @@ func LoadConfig() (Config, error) {
 	cfg := Config{
 		AMQPURL:   os.Getenv("AMQP_URL"),
 		QueueName: os.Getenv("AMQP_QUEUE_NAME"),
-		Runtime:   os.Getenv("CONTAINER_RUNTIME"), // optional — empty is a valid default
+		Runtime:   os.Getenv("CONTAINER_RUNTIME"),
 	}
 
 	var missing []string

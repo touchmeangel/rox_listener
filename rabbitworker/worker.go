@@ -12,7 +12,19 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-type EventHandler func(ctx context.Context, data json.RawMessage) error
+type EventHandler func(ctx context.Context, data json.RawMessage) (json.RawMessage, error)
+
+type PermanentError struct{ Err error }
+
+func (e *PermanentError) Error() string { return e.Err.Error() }
+func (e *PermanentError) Unwrap() error { return e.Err }
+
+func Permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &PermanentError{Err: err}
+}
 
 type incomingMessage struct {
 	Event string          `json:"event"`
@@ -22,6 +34,7 @@ type incomingMessage struct {
 type Worker struct {
 	amqpURL   string
 	queueName string
+	prefetch  int
 
 	mu       sync.RWMutex
 	handlers map[string]EventHandler
@@ -42,6 +55,10 @@ func WithLogger(l *slog.Logger) Option {
 
 func WithReconnectDelay(d time.Duration) Option {
 	return func(w *Worker) { w.reconnectAt = d }
+}
+
+func WithPrefetch(n int) Option {
+	return func(w *Worker) { w.prefetch = n }
 }
 
 func New(amqpURL, queueName string, opts ...Option) *Worker {
@@ -96,6 +113,12 @@ func (w *Worker) connectAndConsume(ctx context.Context) error {
 	}
 	defer ch.Close()
 
+	if w.prefetch > 0 {
+		if err := ch.Qos(w.prefetch, 0, false); err != nil {
+			return fmt.Errorf("set qos: %w", err)
+		}
+	}
+
 	q, err := ch.QueueDeclare(w.queueName, true, false, false, false, nil)
 	if err != nil {
 		return fmt.Errorf("declare queue %q: %w", w.queueName, err)
@@ -111,7 +134,7 @@ func (w *Worker) connectAndConsume(ctx context.Context) error {
 	w.mu.Unlock()
 
 	closeNotify := conn.NotifyClose(make(chan *amqp.Error, 1))
-	w.logger.Info("ready to accept tasks", "queue", q.Name)
+	w.logger.Info("ready to accept tasks", "queue", q.Name, "prefetch", w.prefetch)
 
 	for {
 		select {
@@ -135,7 +158,7 @@ func (w *Worker) dispatch(ctx context.Context, msg amqp.Delivery) {
 	var incoming incomingMessage
 	if err := json.Unmarshal(msg.Body, &incoming); err != nil {
 		w.logger.Warn("malformed message body, dropping", "error", err)
-		_ = msg.Nack(false, false) // don't requeue — it'll never parse
+		_ = msg.Nack(false, false)
 		return
 	}
 
@@ -151,22 +174,81 @@ func (w *Worker) dispatch(ctx context.Context, msg amqp.Delivery) {
 		return
 	}
 
-	if err := msg.Ack(false); err != nil {
-		w.logger.Error("ack failed", "event", incoming.Event, "error", err)
-	}
-
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()
-		defer func() {
-			if r := recover(); r != nil {
-				w.logger.Error("handler panicked", "event", incoming.Event, "panic", r)
-			}
+
+		var (
+			response json.RawMessage
+			err      error
+		)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("handler panicked: %v", r)
+				}
+			}()
+			response, err = handler(ctx, incoming.Data)
 		}()
-		if err := handler(ctx, incoming.Data); err != nil {
+
+		if err != nil {
 			w.logger.Error("handler error", "event", incoming.Event, "error", err)
+
+			var permErr *PermanentError
+			if errors.As(err, &permErr) {
+				if ackErr := msg.Ack(false); ackErr != nil {
+					w.logger.Error("ack failed", "event", incoming.Event, "error", ackErr)
+				}
+				if msg.ReplyTo != "" {
+					w.publishReply(ctx, msg, errorReplyBody(err))
+				}
+				return
+			}
+
+			if nackErr := msg.Nack(false, true); nackErr != nil {
+				w.logger.Error("nack failed", "event", incoming.Event, "error", nackErr)
+			}
+			return
+		}
+
+		if ackErr := msg.Ack(false); ackErr != nil {
+			w.logger.Error("ack failed", "event", incoming.Event, "error", ackErr)
+			return
+		}
+		if msg.ReplyTo != "" {
+			w.publishReply(ctx, msg, response)
 		}
 	}()
+}
+
+func (w *Worker) publishReply(ctx context.Context, msg amqp.Delivery, body json.RawMessage) {
+	w.mu.RLock()
+	ch := w.channel
+	w.mu.RUnlock()
+
+	if ch == nil {
+		w.logger.Error("cannot publish reply: no active channel", "reply_to", msg.ReplyTo)
+		return
+	}
+
+	err := ch.PublishWithContext(ctx, "", msg.ReplyTo, false, false, amqp.Publishing{
+		ContentType:   "application/json",
+		CorrelationId: msg.CorrelationId,
+		Body:          body,
+	})
+	if err != nil {
+		w.logger.Error("publishing reply failed", "reply_to", msg.ReplyTo, "error", err)
+	}
+}
+
+func errorReplyBody(err error) json.RawMessage {
+	body, marshalErr := json.Marshal(struct {
+		Error string `json:"error"`
+	}{Error: err.Error()})
+	if marshalErr != nil {
+		return json.RawMessage(`{"error":"unknown error"}`)
+	}
+	return body
 }
 
 func (w *Worker) Close(ctx context.Context) error {
