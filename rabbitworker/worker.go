@@ -36,11 +36,11 @@ type Worker struct {
 	queueName string
 	prefetch  int
 
-	mu       sync.RWMutex
-	handlers map[string]EventHandler
-
-	conn    *amqp.Connection
-	channel *amqp.Channel
+	mu        sync.RWMutex
+	handlers  map[string]EventHandler
+	conn      *amqp.Connection
+	consumeCh *amqp.Channel
+	publishCh *amqp.Channel
 
 	wg          sync.WaitGroup
 	reconnectAt time.Duration
@@ -49,17 +49,9 @@ type Worker struct {
 
 type Option func(*Worker)
 
-func WithLogger(l *slog.Logger) Option {
-	return func(w *Worker) { w.logger = l }
-}
-
-func WithReconnectDelay(d time.Duration) Option {
-	return func(w *Worker) { w.reconnectAt = d }
-}
-
-func WithPrefetch(n int) Option {
-	return func(w *Worker) { w.prefetch = n }
-}
+func WithLogger(l *slog.Logger) Option          { return func(w *Worker) { w.logger = l } }
+func WithReconnectDelay(d time.Duration) Option { return func(w *Worker) { w.reconnectAt = d } }
+func WithPrefetch(n int) Option                 { return func(w *Worker) { w.prefetch = n } }
 
 func New(amqpURL, queueName string, opts ...Option) *Worker {
 	w := &Worker{
@@ -90,7 +82,6 @@ func (w *Worker) Run(ctx context.Context) error {
 		if err == nil {
 			return nil
 		}
-
 		w.logger.Error("connection lost, reconnecting", "error", err, "delay", w.reconnectAt)
 		select {
 		case <-ctx.Done():
@@ -107,30 +98,36 @@ func (w *Worker) connectAndConsume(ctx context.Context) error {
 	}
 	defer func() { _ = conn.Close() }()
 
-	ch, err := conn.Channel()
+	consumeCh, err := conn.Channel()
 	if err != nil {
-		return fmt.Errorf("open channel: %w", err)
+		return fmt.Errorf("open consume channel: %w", err)
 	}
-	defer func() { _ = ch.Close() }()
+	defer func() { _ = consumeCh.Close() }()
 
 	if w.prefetch > 0 {
-		if err := ch.Qos(w.prefetch, 0, false); err != nil {
+		if err := consumeCh.Qos(w.prefetch, 0, false); err != nil {
 			return fmt.Errorf("set qos: %w", err)
 		}
 	}
 
-	q, err := ch.QueueDeclare(w.queueName, true, false, false, false, nil)
+	q, err := consumeCh.QueueDeclare(w.queueName, true, false, false, false, nil)
 	if err != nil {
 		return fmt.Errorf("declare queue %q: %w", w.queueName, err)
 	}
 
-	deliveries, err := ch.Consume(q.Name, "", false, false, false, false, nil)
+	deliveries, err := consumeCh.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
 		return fmt.Errorf("consume: %w", err)
 	}
 
+	publishCh, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("open publish channel: %w", err)
+	}
+	defer func() { _ = publishCh.Close() }()
+
 	w.mu.Lock()
-	w.conn, w.channel = conn, ch
+	w.conn, w.consumeCh, w.publishCh = conn, consumeCh, publishCh
 	w.mu.Unlock()
 
 	closeNotify := conn.NotifyClose(make(chan *amqp.Error, 1))
@@ -221,17 +218,37 @@ func (w *Worker) dispatch(ctx context.Context, msg amqp.Delivery) {
 	}()
 }
 
-func (w *Worker) publishReply(ctx context.Context, msg amqp.Delivery, body json.RawMessage) {
+func (w *Worker) getPublishChannel() (*amqp.Channel, error) {
 	w.mu.RLock()
-	ch := w.channel
+	ch, conn := w.publishCh, w.conn
 	w.mu.RUnlock()
 
-	if ch == nil {
-		w.logger.Error("cannot publish reply: no active channel", "reply_to", msg.ReplyTo)
+	if ch != nil && !ch.IsClosed() {
+		return ch, nil
+	}
+	if conn == nil || conn.IsClosed() {
+		return nil, errors.New("no active connection")
+	}
+
+	newCh, err := conn.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("reopening publish channel: %w", err)
+	}
+
+	w.mu.Lock()
+	w.publishCh = newCh
+	w.mu.Unlock()
+	return newCh, nil
+}
+
+func (w *Worker) publishReply(ctx context.Context, msg amqp.Delivery, body json.RawMessage) {
+	ch, err := w.getPublishChannel()
+	if err != nil {
+		w.logger.Error("cannot publish reply", "reply_to", msg.ReplyTo, "error", err)
 		return
 	}
 
-	err := ch.PublishWithContext(ctx, "", msg.ReplyTo, false, false, amqp.Publishing{
+	err = ch.PublishWithContext(ctx, "", msg.ReplyTo, false, false, amqp.Publishing{
 		ContentType:   "application/json",
 		CorrelationId: msg.CorrelationId,
 		Body:          body,
@@ -266,8 +283,11 @@ func (w *Worker) Close(ctx context.Context) error {
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.channel != nil {
-		_ = w.channel.Close()
+	if w.publishCh != nil {
+		_ = w.publishCh.Close()
+	}
+	if w.consumeCh != nil {
+		_ = w.consumeCh.Close()
 	}
 	if w.conn != nil {
 		return w.conn.Close()
