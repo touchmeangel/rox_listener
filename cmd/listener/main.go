@@ -29,7 +29,7 @@ func main() {
 		logger.Error("containerd client init failed", "error", err)
 		return
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	w := rabbitworker.New(
 		cfg.AMQPURL,
