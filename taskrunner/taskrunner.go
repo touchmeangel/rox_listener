@@ -24,19 +24,17 @@ type ContainerResult struct {
 
 type CoordinatorTask struct {
 	RunID     string `json:"run_id"`
-	RepoRef   string `json:"repo_ref"`
 	SkipBuild bool   `json:"skip_build"`
 }
 
 type WorkerTask struct {
 	RunID       string `json:"run_id"`
-	RepoRef     string `json:"repo_ref"`
 	MissionID   string `json:"mission_id"`
 	MissionsRef string `json:"missions_ref"`
 }
 
 func randomID() string {
-	b := make([]byte, 4)
+	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
