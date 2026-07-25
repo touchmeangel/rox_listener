@@ -105,13 +105,13 @@ func (w *Worker) connectAndConsume(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ch, err := conn.Channel()
 	if err != nil {
 		return fmt.Errorf("open channel: %w", err)
 	}
-	defer ch.Close()
+	defer func() { _ = ch.Close() }()
 
 	if w.prefetch > 0 {
 		if err := ch.Qos(w.prefetch, 0, false); err != nil {
