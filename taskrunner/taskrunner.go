@@ -28,9 +28,9 @@ type CoordinatorTask struct {
 }
 
 type WorkerTask struct {
-	RunID       string `json:"run_id"`
-	MissionID   string `json:"mission_id"`
-	MissionsRef string `json:"missions_ref"`
+	RunID     string          `json:"run_id"`
+	MissionID string          `json:"mission_id"`
+	Mission   json.RawMessage `json:"mission"`
 }
 
 func randomID() string {
@@ -156,6 +156,9 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, d
 	if task.MissionID == "" {
 		return nil, rabbitworker.Permanent(fmt.Errorf("worker task missing mission_id"))
 	}
+	if len(task.Mission) == 0 || !json.Valid(task.Mission) {
+		return nil, rabbitworker.Permanent(fmt.Errorf("worker task missing/invalid mission data"))
+	}
 
 	workDir, cleanup, err := newWorkspace()
 	if err != nil {
@@ -173,9 +176,15 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, d
 		return nil, fmt.Errorf("preparing placeholder config: %w", err)
 	}
 
+	missionsFileContent, err := json.Marshal(struct {
+		Missions []json.RawMessage `json:"missions"`
+	}{Missions: []json.RawMessage{task.Mission}})
+	if err != nil {
+		return nil, fmt.Errorf("wrapping mission for worker CLI: %w", err)
+	}
 	missionsFile := filepath.Join(workDir, "coordinator_results.json")
-	if err := os.WriteFile(missionsFile, []byte(`{"missions":[]}`), 0o644); err != nil {
-		return nil, fmt.Errorf("preparing placeholder missions file: %w", err)
+	if err := os.WriteFile(missionsFile, missionsFileContent, 0o644); err != nil {
+		return nil, fmt.Errorf("writing missions file: %w", err)
 	}
 
 	debugLog := filepath.Join(workDir, "debug.log")
