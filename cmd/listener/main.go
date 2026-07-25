@@ -31,6 +31,10 @@ func main() {
 	}
 	defer func() { _ = client.Close() }()
 
+	if err := client.ReapOrphans(context.Background()); err != nil {
+		logger.Warn("orphan container sweep had errors", "error", err)
+	}
+
 	w := rabbitworker.New(
 		cfg.AMQPURL,
 		cfg.QueueName,

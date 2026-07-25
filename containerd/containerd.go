@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -29,16 +31,25 @@ const (
 	defaultSnapshot  = "overlayfs"
 )
 
+const cleanupTimeout = 30 * time.Second
+
 type Client struct {
 	cli       *containerd.Client
 	namespace string
+	logger    *slog.Logger
 }
 
-func New() (*Client, error) {
-	return NewWithOptions(defaultSocket, defaultNamespace)
+type Option func(*Client)
+
+func WithLogger(l *slog.Logger) Option {
+	return func(c *Client) { c.logger = l }
 }
 
-func NewWithOptions(socket, namespace string) (*Client, error) {
+func New(opts ...Option) (*Client, error) {
+	return NewWithOptions(defaultSocket, defaultNamespace, opts...)
+}
+
+func NewWithOptions(socket, namespace string, opts ...Option) (*Client, error) {
 	if socket == "" {
 		socket = defaultSocket
 	}
@@ -49,7 +60,11 @@ func NewWithOptions(socket, namespace string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connecting to containerd at %s: %w", socket, err)
 	}
-	return &Client{cli: cli, namespace: namespace}, nil
+	c := &Client{cli: cli, namespace: namespace, logger: slog.Default()}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c, nil
 }
 
 func (c *Client) Close() error { return c.cli.Close() }
@@ -240,7 +255,11 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		return -1, fmt.Errorf("creating container: %w", err)
 	}
 	defer func() {
-		_ = cont.Delete(context.Background(), containerd.WithSnapshotCleanup)
+		delCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cancel()
+		if err := cont.Delete(delCtx, containerd.WithSnapshotCleanup); err != nil {
+			c.logger.Error("cleanup: failed to delete container", "container", spec.Name, "error", err)
+		}
 	}()
 
 	pw := &Writer{prefix: spec.LogPrefix, quiet: spec.Quiet, live: spec.Live}
@@ -255,7 +274,11 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		return -1, fmt.Errorf("creating task: %w", err)
 	}
 	defer func() {
-		_, _ = task.Delete(context.Background())
+		delCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cancel()
+		if _, err := task.Delete(delCtx); err != nil {
+			c.logger.Error("cleanup: failed to delete task", "container", spec.Name, "error", err)
+		}
 	}()
 
 	exitCh, err := task.Wait(ctx)
@@ -278,6 +301,28 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		<-exitCh
 		return -1, parent.Err()
 	}
+}
+
+func (c *Client) ReapOrphans(parent context.Context) error {
+	ctx := c.ctx(parent)
+	containers, err := c.cli.Containers(ctx)
+	if err != nil {
+		return fmt.Errorf("listing containers for orphan sweep: %w", err)
+	}
+
+	var errs []error
+	for _, cont := range containers {
+		id := cont.ID()
+		if task, err := cont.Task(ctx, nil); err == nil {
+			if _, err := task.Delete(ctx, containerd.WithProcessKill); err != nil {
+				errs = append(errs, fmt.Errorf("killing orphan task %s: %w", id, err))
+			}
+		}
+		if err := cont.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
+			errs = append(errs, fmt.Errorf("deleting orphan container %s: %w", id, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (c *Client) forceRemove(ctx context.Context, name string) {
