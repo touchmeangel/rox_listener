@@ -42,6 +42,9 @@ type Worker struct {
 	consumeCh *amqp.Channel
 	publishCh *amqp.Channel
 
+	ackMu     sync.Mutex
+	publishMu sync.Mutex
+
 	wg          sync.WaitGroup
 	reconnectAt time.Duration
 	logger      *slog.Logger
@@ -151,11 +154,23 @@ func (w *Worker) connectAndConsume(ctx context.Context) error {
 	}
 }
 
+func (w *Worker) ackMsg(msg amqp.Delivery, multiple bool) error {
+	w.ackMu.Lock()
+	defer w.ackMu.Unlock()
+	return msg.Ack(multiple)
+}
+
+func (w *Worker) nackMsg(msg amqp.Delivery, multiple, requeue bool) error {
+	w.ackMu.Lock()
+	defer w.ackMu.Unlock()
+	return msg.Nack(multiple, requeue)
+}
+
 func (w *Worker) dispatch(ctx context.Context, msg amqp.Delivery) {
 	var incoming incomingMessage
 	if err := json.Unmarshal(msg.Body, &incoming); err != nil {
 		w.logger.Warn("malformed message body, dropping", "error", err)
-		_ = msg.Nack(false, false)
+		_ = w.nackMsg(msg, false, false)
 		return
 	}
 
@@ -167,7 +182,7 @@ func (w *Worker) dispatch(ctx context.Context, msg amqp.Delivery) {
 
 	if !ok {
 		w.logger.Warn("unhandled event", "event", incoming.Event)
-		_ = msg.Ack(false)
+		_ = w.ackMsg(msg, false)
 		return
 	}
 
@@ -193,7 +208,7 @@ func (w *Worker) dispatch(ctx context.Context, msg amqp.Delivery) {
 
 			var permErr *PermanentError
 			if errors.As(err, &permErr) {
-				if ackErr := msg.Ack(false); ackErr != nil {
+				if ackErr := w.ackMsg(msg, false); ackErr != nil {
 					w.logger.Error("ack failed", "event", incoming.Event, "error", ackErr)
 				}
 				if msg.ReplyTo != "" {
@@ -202,13 +217,13 @@ func (w *Worker) dispatch(ctx context.Context, msg amqp.Delivery) {
 				return
 			}
 
-			if nackErr := msg.Nack(false, true); nackErr != nil {
+			if nackErr := w.nackMsg(msg, false, true); nackErr != nil {
 				w.logger.Error("nack failed", "event", incoming.Event, "error", nackErr)
 			}
 			return
 		}
 
-		if ackErr := msg.Ack(false); ackErr != nil {
+		if ackErr := w.ackMsg(msg, false); ackErr != nil {
 			w.logger.Error("ack failed", "event", incoming.Event, "error", ackErr)
 			return
 		}
@@ -248,11 +263,13 @@ func (w *Worker) publishReply(ctx context.Context, msg amqp.Delivery, body json.
 		return
 	}
 
+	w.publishMu.Lock()
 	err = ch.PublishWithContext(ctx, "", msg.ReplyTo, false, false, amqp.Publishing{
 		ContentType:   "application/json",
 		CorrelationId: msg.CorrelationId,
 		Body:          body,
 	})
+	w.publishMu.Unlock()
 	if err != nil {
 		w.logger.Error("publishing reply failed", "reply_to", msg.ReplyTo, "error", err)
 	}
