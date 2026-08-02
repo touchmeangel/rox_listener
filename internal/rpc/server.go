@@ -6,8 +6,8 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/touchmeangel/rox_listener/containerd"
-	"github.com/touchmeangel/rox_listener/tasks"
+	"github.com/touchmeangel/rox_listener/internal/containerd"
+	"github.com/touchmeangel/rox_listener/internal/tasks"
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 
 	"google.golang.org/grpc/codes"

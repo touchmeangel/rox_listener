@@ -3,7 +3,7 @@ package rpc
 import (
 	"context"
 
-	"github.com/touchmeangel/rox_listener/tasks"
+	"github.com/touchmeangel/rox_listener/internal/tasks"
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

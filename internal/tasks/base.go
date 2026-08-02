@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/touchmeangel/rox_listener/containerd"
+	"github.com/touchmeangel/rox_listener/internal/containerd"
 )
 
 const Image = "touchmeangel/rox_agent:latest"

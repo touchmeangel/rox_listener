@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/touchmeangel/rox_listener/config"
-	"github.com/touchmeangel/rox_listener/containerd"
+	"github.com/touchmeangel/rox_listener/internal/containerd"
 	"github.com/touchmeangel/rox_listener/internal/rpc"
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 	"google.golang.org/grpc"
