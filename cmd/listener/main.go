@@ -54,11 +54,12 @@ func main() {
 			PermitWithoutStream: true,
 		}),
 		grpc.ChainUnaryInterceptor(
+			rpc.LoggingInterceptor(logger),
 			rpc.ConcurrencyLimiter(sem),
 		),
 	)
 
-	srv := rpc.NewServer(client, cfg.Runtime, logger)
+	srv := rpc.NewServer(client, cfg.Runtime)
 	taskpb.RegisterTaskServiceServer(grpcServer, srv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/touchmeangel/rox_listener/internal/containerd"
 	"github.com/touchmeangel/rox_listener/internal/tasks"
@@ -19,17 +20,12 @@ type Server struct {
 
 	client  *containerd.Client
 	runtime string
-	logger  *slog.Logger
 }
 
-func NewServer(client *containerd.Client, runtime string, logger *slog.Logger) *Server {
-	if logger == nil {
-		logger = slog.Default()
-	}
+func NewServer(client *containerd.Client, runtime string) *Server {
 	return &Server{
 		client:  client,
 		runtime: runtime,
-		logger:  logger,
 	}
 }
 
@@ -42,6 +38,30 @@ func ConcurrencyLimiter(sem chan struct{}) grpc.UnaryServerInterceptor {
 			return nil, status.FromContextError(ctx.Err()).Err()
 		}
 		return handler(ctx, req)
+	}
+}
+
+func LoggingInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		start := time.Now()
+		resp, err := handler(ctx, req)
+		dur := time.Since(start)
+
+		code := status.Code(err)
+		attrs := []any{
+			"method", info.FullMethod,
+			"duration_ms", dur.Milliseconds(),
+			"code", code.String(),
+		}
+		if err != nil {
+			logger.ErrorContext(ctx, "rpc failed", append(attrs, "error", err)...)
+		} else {
+			logger.InfoContext(ctx, "rpc completed", attrs...)
+		}
+		return resp, err
 	}
 }
 
