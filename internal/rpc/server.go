@@ -10,6 +10,7 @@ import (
 	"github.com/touchmeangel/rox_listener/internal/tasks"
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -35,16 +36,17 @@ func NewServer(client *containerd.Client, runtime string, concurrency int, logge
 	}
 }
 
-func (s *Server) acquire(ctx context.Context) error {
-	select {
-	case s.sem <- struct{}{}:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+func ConcurrencyLimiter(sem chan struct{}) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		select {
+		case sem <- struct{}{}:
+			defer func() { <-sem }()
+		case <-ctx.Done():
+			return nil, status.FromContextError(ctx.Err()).Err()
+		}
+		return handler(ctx, req)
 	}
 }
-
-func (s *Server) release() { <-s.sem }
 
 func toStatus(err error) error {
 	var permErr *tasks.PermanentError
@@ -56,11 +58,6 @@ func toStatus(err error) error {
 
 func execute[TTask any](ctx context.Context, s *Server, run tasks.Runner, task TTask) (tasks.ContainerResult, error) {
 	var zero tasks.ContainerResult
-
-	if err := s.acquire(ctx); err != nil {
-		return zero, status.FromContextError(err).Err()
-	}
-	defer s.release()
 
 	payload, err := json.Marshal(task)
 	if err != nil {

@@ -42,6 +42,8 @@ func main() {
 		return
 	}
 
+	sem := make(chan struct{}, cfg.MaxConcurrentTasks)
+
 	grpcServer := grpc.NewServer(
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    30 * time.Second,
@@ -51,6 +53,9 @@ func main() {
 			MinTime:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
+		grpc.ChainUnaryInterceptor(
+			rpc.ConcurrencyLimiter(sem),
+		),
 	)
 
 	srv := rpc.NewServer(client, cfg.Runtime, cfg.MaxConcurrentTasks, logger)
