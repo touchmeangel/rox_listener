@@ -8,8 +8,6 @@ import (
 )
 
 type Config struct {
-	AMQPURL            string
-	QueueName          string
 	Runtime            string
 	ListenAddr         string
 	MaxConcurrentTasks int
@@ -17,18 +15,13 @@ type Config struct {
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		AMQPURL:    os.Getenv("AMQP_URL"),
-		QueueName:  os.Getenv("AMQP_QUEUE_NAME"),
 		Runtime:    os.Getenv("CONTAINER_RUNTIME"),
 		ListenAddr: os.Getenv("LISTEN_ADDRESS"),
 	}
 
 	var missing []string
-	if cfg.AMQPURL == "" {
-		missing = append(missing, "AMQP_URL")
-	}
-	if cfg.QueueName == "" {
-		missing = append(missing, "AMQP_QUEUE_NAME")
+	if cfg.ListenAddr == "" {
+		missing = append(missing, "LISTEN_ADDRESS")
 	}
 
 	raw := os.Getenv("MAX_CONCURRENT_TASKS")
