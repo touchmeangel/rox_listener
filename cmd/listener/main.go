@@ -39,7 +39,7 @@ func main() {
 		cfg.AMQPURL,
 		cfg.QueueName,
 		rabbitworker.WithLogger(logger),
-		rabbitworker.WithPrefetch(cfg.MaxConcurrentContainers),
+		rabbitworker.WithPrefetch(cfg.MaxConcurrentTasks),
 	)
 
 	w.On("coordinator", func(ctx context.Context, data json.RawMessage) (json.RawMessage, error) {

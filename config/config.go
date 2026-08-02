@@ -8,10 +8,10 @@ import (
 )
 
 type Config struct {
-	AMQPURL                 string
-	QueueName               string
-	Runtime                 string
-	MaxConcurrentContainers int
+	AMQPURL            string
+	QueueName          string
+	Runtime            string
+	MaxConcurrentTasks int
 }
 
 func LoadConfig() (Config, error) {
@@ -29,13 +29,13 @@ func LoadConfig() (Config, error) {
 		missing = append(missing, "AMQP_QUEUE_NAME")
 	}
 
-	raw := os.Getenv("MAX_CONCURRENT_CONTAINERS")
+	raw := os.Getenv("MAX_CONCURRENT_TASKS")
 	if raw == "" {
-		missing = append(missing, "MAX_CONCURRENT_CONTAINERS")
+		missing = append(missing, "MAX_CONCURRENT_TASKS")
 	} else if n, err := strconv.Atoi(raw); err != nil || n <= 0 {
-		return cfg, fmt.Errorf("MAX_CONCURRENT_CONTAINERS must be a positive integer, got %q", raw)
+		return cfg, fmt.Errorf("MAX_CONCURRENT_TASKS must be a positive integer, got %q", raw)
 	} else {
-		cfg.MaxConcurrentContainers = n
+		cfg.MaxConcurrentTasks = n
 	}
 
 	if len(missing) > 0 {
