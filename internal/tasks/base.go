@@ -35,8 +35,7 @@ type ContainerResult struct {
 }
 
 type CoordinatorTask struct {
-	RunID     string `json:"run_id"`
-	SkipBuild bool   `json:"skip_build"`
+	RunID string `json:"run_id"`
 }
 
 type WorkerTask struct {

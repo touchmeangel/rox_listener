@@ -52,9 +52,6 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 		"--output", "/work/coordinator_results.json",
 		"--debug", "/app/debug.log",
 	}
-	if task.SkipBuild {
-		cmd = append(cmd, "--skip-build")
-	}
 
 	mounts := []containerd.Mount{
 		{Source: repoDir, Target: "/repo", ReadOnly: true},
