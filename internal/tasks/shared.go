@@ -34,16 +34,6 @@ type ContainerResult struct {
 	Error    string          `json:"error,omitempty"`
 }
 
-type CoordinatorTask struct {
-	RunID string `json:"run_id"`
-}
-
-type WorkerTask struct {
-	RunID     string          `json:"run_id"`
-	MissionID string          `json:"mission_id"`
-	Mission   json.RawMessage `json:"mission"`
-}
-
 func randomID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)

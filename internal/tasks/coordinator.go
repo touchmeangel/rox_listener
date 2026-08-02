@@ -7,37 +7,36 @@ import (
 	"path/filepath"
 
 	"github.com/touchmeangel/rox_listener/internal/containerd"
+	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 )
 
-func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, task CoordinatorTask) (ContainerResult, error) {
-	if task.RunID == "" {
-		task.RunID = randomID()
-	}
+func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
+	runID := req.GetRunId()
 
 	workDir, cleanup, err := newWorkspace()
 	if err != nil {
-		return ContainerResult{}, err
+		return nil, err
 	}
 	defer cleanup()
 
 	repoDir := filepath.Join(workDir, "repo")
 	if err := os.MkdirAll(repoDir, 0o755); err != nil {
-		return ContainerResult{}, fmt.Errorf("preparing placeholder repo dir: %w", err)
+		return nil, fmt.Errorf("preparing placeholder repo dir: %w", err)
 	}
 
 	configFile := filepath.Join(workDir, "config.json")
 	if err := os.WriteFile(configFile, []byte("{}"), 0o644); err != nil {
-		return ContainerResult{}, fmt.Errorf("preparing placeholder config: %w", err)
+		return nil, fmt.Errorf("preparing placeholder config: %w", err)
 	}
 
 	debugLog := filepath.Join(workDir, "debug.log")
 	if err := touchEmpty(debugLog); err != nil {
-		return ContainerResult{}, fmt.Errorf("preparing debug log: %w", err)
+		return nil, fmt.Errorf("preparing debug log: %w", err)
 	}
 
 	outputHostPath := filepath.Join(workDir, "coordinator_results.json")
 	if err := touchEmpty(outputHostPath); err != nil {
-		return ContainerResult{}, fmt.Errorf("preparing output file: %w", err)
+		return nil, fmt.Errorf("preparing output file: %w", err)
 	}
 
 	cmd := []string{
@@ -55,12 +54,16 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 		{Source: debugLog, Target: "/app/debug.log", ReadOnly: false},
 	}
 
-	name := fmt.Sprintf("rox-coordinator-%s-%s", task.RunID, randomID())
+	name := fmt.Sprintf("rox-coordinator-%s-%s", runID, randomID())
 	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath)
 	if err != nil {
-		return ContainerResult{}, err
+		return nil, err
 	}
-	result.RunID = task.RunID
 
-	return result, nil
+	return &taskpb.RunCoordinatorResponse{
+		RunId:    runID,
+		ExitCode: result.ExitCode,
+		Output:   result.Output,
+		Error:    result.Error,
+	}, nil
 }
