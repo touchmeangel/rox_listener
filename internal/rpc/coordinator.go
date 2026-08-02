@@ -14,11 +14,11 @@ func (s *Server) RunCoordinator(ctx context.Context, req *taskpb.RunCoordinatorR
 		return nil, status.Error(codes.InvalidArgument, "run_id is required")
 	}
 
-	result, err := execute(ctx, s, tasks.RunCoordinator, tasks.CoordinatorTask{
+	result, err := tasks.RunCoordinator(ctx, s.client, s.runtime, tasks.CoordinatorTask{
 		RunID: req.GetRunId(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, toStatus(err)
 	}
 
 	return &taskpb.RunCoordinatorResponse{

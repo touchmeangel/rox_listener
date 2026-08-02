@@ -18,13 +18,13 @@ func (s *Server) RunWorker(ctx context.Context, req *taskpb.RunWorkerRequest) (*
 		return nil, status.Error(codes.InvalidArgument, "mission must be valid, non-empty JSON")
 	}
 
-	result, err := execute(ctx, s, tasks.RunWorker, tasks.WorkerTask{
+	result, err := tasks.RunWorker(ctx, s.client, s.runtime, tasks.WorkerTask{
 		RunID:     req.GetRunId(),
 		MissionID: req.GetMissionId(),
 		Mission:   json.RawMessage(req.GetMission()),
 	})
 	if err != nil {
-		return nil, err
+		return nil, toStatus(err)
 	}
 
 	return &taskpb.RunWorkerResponse{

@@ -10,57 +10,53 @@ import (
 	"github.com/touchmeangel/rox_listener/internal/containerd"
 )
 
-func RunWorker(ctx context.Context, client *containerd.Client, runtime string, data json.RawMessage) (json.RawMessage, error) {
-	var task WorkerTask
-	if err := json.Unmarshal(data, &task); err != nil {
-		return nil, Permanent(fmt.Errorf("invalid worker task payload: %w", err))
-	}
+func RunWorker(ctx context.Context, client *containerd.Client, runtime string, task WorkerTask) (ContainerResult, error) {
 	if task.RunID == "" {
 		task.RunID = randomID()
 	}
 	if task.MissionID == "" {
-		return nil, Permanent(fmt.Errorf("worker task missing mission_id"))
+		return ContainerResult{}, Permanent(fmt.Errorf("worker task missing mission_id"))
 	}
 	if len(task.Mission) == 0 || !json.Valid(task.Mission) {
-		return nil, Permanent(fmt.Errorf("worker task missing/invalid mission data"))
+		return ContainerResult{}, Permanent(fmt.Errorf("worker task missing/invalid mission data"))
 	}
 
 	workDir, cleanup, err := newWorkspace()
 	if err != nil {
-		return nil, err
+		return ContainerResult{}, err
 	}
 	defer cleanup()
 
 	repoDir := filepath.Join(workDir, "repo")
 	if err := os.MkdirAll(repoDir, 0o755); err != nil {
-		return nil, fmt.Errorf("preparing placeholder repo dir: %w", err)
+		return ContainerResult{}, fmt.Errorf("preparing placeholder repo dir: %w", err)
 	}
 
 	configFile := filepath.Join(workDir, "config.json")
 	if err := os.WriteFile(configFile, []byte("{}"), 0o644); err != nil {
-		return nil, fmt.Errorf("preparing placeholder config: %w", err)
+		return ContainerResult{}, fmt.Errorf("preparing placeholder config: %w", err)
 	}
 
 	missionsFileContent, err := json.Marshal(struct {
 		Missions []json.RawMessage `json:"missions"`
 	}{Missions: []json.RawMessage{task.Mission}})
 	if err != nil {
-		return nil, fmt.Errorf("wrapping mission for worker CLI: %w", err)
+		return ContainerResult{}, fmt.Errorf("wrapping mission for worker CLI: %w", err)
 	}
 	missionsFile := filepath.Join(workDir, "coordinator_results.json")
 	if err := os.WriteFile(missionsFile, missionsFileContent, 0o644); err != nil {
-		return nil, fmt.Errorf("writing missions file: %w", err)
+		return ContainerResult{}, fmt.Errorf("writing missions file: %w", err)
 	}
 
 	debugLog := filepath.Join(workDir, "debug.log")
 	if err := touchEmpty(debugLog); err != nil {
-		return nil, fmt.Errorf("preparing debug log: %w", err)
+		return ContainerResult{}, fmt.Errorf("preparing debug log: %w", err)
 	}
 
 	outputFilename := fmt.Sprintf("worker_%s.json", task.MissionID)
 	outputHostPath := filepath.Join(workDir, outputFilename)
 	if err := touchEmpty(outputHostPath); err != nil {
-		return nil, fmt.Errorf("preparing output file: %w", err)
+		return ContainerResult{}, fmt.Errorf("preparing output file: %w", err)
 	}
 
 	cmd := []string{
@@ -84,9 +80,9 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, d
 	name := fmt.Sprintf("rox-worker-%s-%s-%s", task.RunID, task.MissionID, randomID())
 	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath)
 	if err != nil {
-		return nil, err
+		return ContainerResult{}, err
 	}
 	result.RunID = task.RunID
 
-	return json.Marshal(result)
+	return result, nil
 }

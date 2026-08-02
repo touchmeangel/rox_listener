@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 
@@ -52,24 +51,4 @@ func toStatus(err error) error {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	return status.Errorf(codes.Internal, "%v", err)
-}
-
-func execute[TTask any](ctx context.Context, s *Server, run tasks.Runner, task TTask) (tasks.ContainerResult, error) {
-	var zero tasks.ContainerResult
-
-	payload, err := json.Marshal(task)
-	if err != nil {
-		return zero, status.Errorf(codes.Internal, "encoding task: %v", err)
-	}
-
-	raw, err := run(ctx, s.client, s.runtime, payload)
-	if err != nil {
-		return zero, toStatus(err)
-	}
-
-	var result tasks.ContainerResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return zero, status.Errorf(codes.Internal, "decoding task result: %v", err)
-	}
-	return result, nil
 }

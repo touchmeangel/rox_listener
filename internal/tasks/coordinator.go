@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,39 +9,35 @@ import (
 	"github.com/touchmeangel/rox_listener/internal/containerd"
 )
 
-func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, data json.RawMessage) (json.RawMessage, error) {
-	var task CoordinatorTask
-	if err := json.Unmarshal(data, &task); err != nil {
-		return nil, Permanent(fmt.Errorf("invalid coordinator task payload: %w", err))
-	}
+func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, task CoordinatorTask) (ContainerResult, error) {
 	if task.RunID == "" {
 		task.RunID = randomID()
 	}
 
 	workDir, cleanup, err := newWorkspace()
 	if err != nil {
-		return nil, err
+		return ContainerResult{}, err
 	}
 	defer cleanup()
 
 	repoDir := filepath.Join(workDir, "repo")
 	if err := os.MkdirAll(repoDir, 0o755); err != nil {
-		return nil, fmt.Errorf("preparing placeholder repo dir: %w", err)
+		return ContainerResult{}, fmt.Errorf("preparing placeholder repo dir: %w", err)
 	}
 
 	configFile := filepath.Join(workDir, "config.json")
 	if err := os.WriteFile(configFile, []byte("{}"), 0o644); err != nil {
-		return nil, fmt.Errorf("preparing placeholder config: %w", err)
+		return ContainerResult{}, fmt.Errorf("preparing placeholder config: %w", err)
 	}
 
 	debugLog := filepath.Join(workDir, "debug.log")
 	if err := touchEmpty(debugLog); err != nil {
-		return nil, fmt.Errorf("preparing debug log: %w", err)
+		return ContainerResult{}, fmt.Errorf("preparing debug log: %w", err)
 	}
 
 	outputHostPath := filepath.Join(workDir, "coordinator_results.json")
 	if err := touchEmpty(outputHostPath); err != nil {
-		return nil, fmt.Errorf("preparing output file: %w", err)
+		return ContainerResult{}, fmt.Errorf("preparing output file: %w", err)
 	}
 
 	cmd := []string{
@@ -63,9 +58,9 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 	name := fmt.Sprintf("rox-coordinator-%s-%s", task.RunID, randomID())
 	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath)
 	if err != nil {
-		return nil, err
+		return ContainerResult{}, err
 	}
 	result.RunID = task.RunID
 
-	return json.Marshal(result)
+	return result, nil
 }

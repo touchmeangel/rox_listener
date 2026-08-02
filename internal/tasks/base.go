@@ -25,7 +25,7 @@ func Permanent(err error) error {
 	return &PermanentError{Err: err}
 }
 
-type Runner func(ctx context.Context, client *containerd.Client, runtime string, data json.RawMessage) (json.RawMessage, error)
+type Runner[TTask any] func(ctx context.Context, client *containerd.Client, runtime string, task TTask) (ContainerResult, error)
 
 type ContainerResult struct {
 	RunID    string          `json:"run_id"`
