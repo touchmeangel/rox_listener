@@ -58,7 +58,7 @@ func main() {
 		),
 	)
 
-	srv := rpc.NewServer(client, cfg.Runtime, cfg.MaxConcurrentTasks, logger)
+	srv := rpc.NewServer(client, cfg.Runtime, logger)
 	taskpb.RegisterTaskServiceServer(grpcServer, srv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

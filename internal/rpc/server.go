@@ -21,10 +21,9 @@ type Server struct {
 	client  *containerd.Client
 	runtime string
 	logger  *slog.Logger
-	sem     chan struct{}
 }
 
-func NewServer(client *containerd.Client, runtime string, concurrency int, logger *slog.Logger) *Server {
+func NewServer(client *containerd.Client, runtime string, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -32,7 +31,6 @@ func NewServer(client *containerd.Client, runtime string, concurrency int, logge
 		client:  client,
 		runtime: runtime,
 		logger:  logger,
-		sem:     make(chan struct{}, concurrency),
 	}
 }
 
