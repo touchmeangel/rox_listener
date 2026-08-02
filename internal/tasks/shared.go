@@ -25,13 +25,13 @@ func Permanent(err error) error {
 	return &PermanentError{Err: err}
 }
 
-type Runner[TTask any] func(ctx context.Context, client *containerd.Client, runtime string, task TTask) (ContainerResult, error)
+type Runner[TTask any] func(ctx context.Context, client *containerd.Client, runtime string, task TTask) (containerResult, error)
 
-type ContainerResult struct {
-	RunID    string          `json:"run_id"`
-	ExitCode int64           `json:"exit_code"`
-	Output   json.RawMessage `json:"output,omitempty"`
-	Error    string          `json:"error,omitempty"`
+type containerResult struct {
+	RunID    string
+	ExitCode int64
+	Output   json.RawMessage
+	Error    string
 }
 
 func randomID() string {
@@ -56,8 +56,8 @@ func newWorkspace() (dir string, cleanup func(), err error) {
 	return dir, func() { _ = os.RemoveAll(dir) }, nil
 }
 
-func run(ctx context.Context, client *containerd.Client, runtime, name string, cmd []string, mounts []containerd.Mount, outputHostPath string) (ContainerResult, error) {
-	result := ContainerResult{RunID: name}
+func run(ctx context.Context, client *containerd.Client, runtime, name string, cmd []string, mounts []containerd.Mount, outputHostPath string) (containerResult, error) {
+	result := containerResult{RunID: name}
 
 	exitCode, runErr := client.Run(ctx, containerd.RunSpec{
 		Image:   Image,
