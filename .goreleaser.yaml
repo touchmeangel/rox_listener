@@ -1,9 +1,9 @@
-project_name: rox
+project_name: rox_listener
 
 builds:
-  - id: rox
-    main: ./cmd/rox
-    binary: rox
+  - id: rox_listener
+    main: ./cmd/rox_listener
+    binary: rox_listener
     env:
       - CGO_ENABLED=0
     goos:
@@ -16,10 +16,10 @@ builds:
       - -s -w -X main.version={{.Version}}
 
 archives:
-  - id: rox
-    ids: [rox]
+  - id: rox_listener
+    ids: [rox_listener]
     formats: [tar.gz]
-    name_template: "rox_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "rox_listener_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"
