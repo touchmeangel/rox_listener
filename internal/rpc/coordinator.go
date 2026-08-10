@@ -10,11 +10,15 @@ import (
 )
 
 func (s *Server) RunCoordinator(ctx context.Context, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
-	if req.GetRunId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "run_id is required")
+	if err := requireNonEmpty(
+		namedField{"run_id", req.GetRunId()},
+		namedField{"workspace_name", req.GetWorkspaceName()},
+		namedField{"coordinator_id", req.GetCoordinatorId()},
+	); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	result, err := tasks.RunCoordinator(ctx, s.client, s.runtime, req)
+	result, err := tasks.RunCoordinator(ctx, s.client, s.runtime, s.s3Client, s.s3Bucket, req)
 	if err != nil {
 		return nil, toStatus(err)
 	}

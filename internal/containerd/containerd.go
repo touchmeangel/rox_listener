@@ -16,6 +16,7 @@ import (
 
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	"github.com/containerd/containerd/v2/pkg/cio"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
@@ -180,6 +181,8 @@ type Mount struct {
 	ReadOnly bool
 }
 
+type PopulateFunc func(rootfs string) error
+
 type RunSpec struct {
 	Image      string
 	Name       string
@@ -192,6 +195,7 @@ type RunSpec struct {
 	LogPrefix  string
 	Quiet      bool
 	Live       LineWriter
+	Populate   PopulateFunc
 }
 
 func runtimeShimFor(name string) string {
@@ -262,6 +266,12 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		}
 	}()
 
+	if spec.Populate != nil {
+		if err := c.populateSnapshot(ctx, cont, spec.Populate); err != nil {
+			return -1, fmt.Errorf("populating container filesystem: %w", err)
+		}
+	}
+
 	pw := &Writer{prefix: spec.LogPrefix, quiet: spec.Quiet, live: spec.Live}
 	var stdout, stderr io.Writer = pw, pw
 	if spec.LogFile != nil {
@@ -301,6 +311,43 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		<-exitCh
 		return -1, parent.Err()
 	}
+}
+
+func (c *Client) populateSnapshot(ctx context.Context, cont containerd.Container, populate PopulateFunc) error {
+	info, err := cont.Info(ctx)
+	if err != nil {
+		return fmt.Errorf("reading container info: %w", err)
+	}
+
+	sn := c.cli.SnapshotService(info.Snapshotter)
+	mounts, err := sn.Mounts(ctx, info.SnapshotKey)
+	if err != nil {
+		return fmt.Errorf("getting snapshot mounts for %s: %w", info.SnapshotKey, err)
+	}
+
+	rootfs, err := os.MkdirTemp("", "rox-rootfs-*")
+	if err != nil {
+		return fmt.Errorf("creating rootfs mountpoint: %w", err)
+	}
+	defer func() {
+		if err := os.Remove(rootfs); err != nil {
+			c.logger.Error("cleanup: failed to remove rootfs mountpoint", "path", rootfs, "error", err)
+		}
+	}()
+
+	if err := mount.All(mounts, rootfs); err != nil {
+		return fmt.Errorf("mounting snapshot at %s: %w", rootfs, err)
+	}
+	defer func() {
+		if err := mount.UnmountAll(rootfs, 0); err != nil {
+			c.logger.Error("cleanup: failed to unmount snapshot", "path", rootfs, "error", err)
+		}
+	}()
+
+	if err := populate(rootfs); err != nil {
+		return fmt.Errorf("running populate callback: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) ReapOrphans(parent context.Context) error {

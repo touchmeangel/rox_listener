@@ -3,9 +3,11 @@ package rpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/touchmeangel/rox_listener/internal/containerd"
 	"github.com/touchmeangel/rox_listener/internal/tasks"
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
@@ -18,14 +20,18 @@ import (
 type Server struct {
 	taskpb.UnimplementedTaskServiceServer
 
-	client  *containerd.Client
-	runtime string
+	client   *containerd.Client
+	runtime  string
+	s3Client *s3.Client
+	s3Bucket string
 }
 
-func NewServer(client *containerd.Client, runtime string) *Server {
+func NewServer(client *containerd.Client, runtime string, s3Client *s3.Client, s3Bucket string) *Server {
 	return &Server{
-		client:  client,
-		runtime: runtime,
+		client:   client,
+		runtime:  runtime,
+		s3Client: s3Client,
+		s3Bucket: s3Bucket,
 	}
 }
 
@@ -63,6 +69,20 @@ func LoggingInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 		}
 		return resp, err
 	}
+}
+
+type namedField struct {
+	Name  string
+	Value string
+}
+
+func requireNonEmpty(fields ...namedField) error {
+	for _, f := range fields {
+		if f.Value == "" {
+			return fmt.Errorf("missing required field: %s", f.Name)
+		}
+	}
+	return nil
 }
 
 func toStatus(err error) error {

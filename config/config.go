@@ -11,18 +11,38 @@ type Config struct {
 	Runtime            string
 	ListenAddr         string
 	MaxConcurrentTasks int
+
+	S3Endpoint        string
+	S3Region          string
+	S3AccessKeyID     string
+	S3SecretAccessKey string
+	S3Bucket          string
 }
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		Runtime:    os.Getenv("CONTAINER_RUNTIME"),
-		ListenAddr: os.Getenv("LISTEN_ADDRESS"),
+		Runtime:           os.Getenv("CONTAINER_RUNTIME"),
+		ListenAddr:        os.Getenv("LISTEN_ADDRESS"),
+		S3Endpoint:        os.Getenv("S3_ENDPOINT"),
+		S3Region:          os.Getenv("S3_REGION"),
+		S3AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
+		S3SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
+		S3Bucket:          os.Getenv("S3_BUCKET"),
 	}
 
 	var missing []string
-	if cfg.ListenAddr == "" {
-		missing = append(missing, "LISTEN_ADDRESS")
+	checkReq := func(name, val string) {
+		if val == "" {
+			missing = append(missing, name)
+		}
 	}
+
+	checkReq("LISTEN_ADDRESS", cfg.ListenAddr)
+	checkReq("S3_ENDPOINT", cfg.S3Endpoint)
+	checkReq("S3_REGION", cfg.S3Region)
+	checkReq("S3_ACCESS_KEY_ID", cfg.S3AccessKeyID)
+	checkReq("S3_SECRET_ACCESS_KEY", cfg.S3SecretAccessKey)
+	checkReq("S3_BUCKET", cfg.S3Bucket)
 
 	raw := os.Getenv("MAX_CONCURRENT_TASKS")
 	if raw == "" {

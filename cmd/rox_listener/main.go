@@ -12,6 +12,7 @@ import (
 	"github.com/touchmeangel/rox_listener/config"
 	"github.com/touchmeangel/rox_listener/internal/containerd"
 	"github.com/touchmeangel/rox_listener/internal/rpc"
+	"github.com/touchmeangel/rox_listener/internal/storage"
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
@@ -59,7 +60,12 @@ func main() {
 		),
 	)
 
-	srv := rpc.NewServer(client, cfg.Runtime)
+	s3, err := storage.NewS3Client(context.Background(), cfg.S3Endpoint, cfg.S3Region, cfg.S3AccessKeyID, cfg.S3SecretAccessKey)
+	if err != nil {
+		logger.Error("storage connection failed", "error", err)
+		return
+	}
+	srv := rpc.NewServer(client, cfg.Runtime, s3, cfg.S3Bucket)
 	taskpb.RegisterTaskServiceServer(grpcServer, srv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
