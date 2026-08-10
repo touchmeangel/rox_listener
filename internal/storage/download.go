@@ -63,13 +63,13 @@ func downloadOneObject(ctx context.Context, s3Client *s3.Client, bucket, key, de
 	if err != nil {
 		return fmt.Errorf("downloading %s: %w", key, err)
 	}
-	defer out.Body.Close()
+	defer func() { _ = out.Body.Close() }()
 
 	f, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", destPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := io.Copy(f, out.Body); err != nil {
 		return fmt.Errorf("writing %s: %w", destPath, err)
