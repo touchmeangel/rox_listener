@@ -7,7 +7,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.3.0
-	github.com/touchmeangel/rox_proto v0.0.0-20260802194648-f515c39411d8
+	github.com/touchmeangel/rox_proto v0.2.8
 	google.golang.org/grpc v1.80.0
 )
 
