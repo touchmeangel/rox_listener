@@ -156,6 +156,8 @@ github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO
 github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+github.com/touchmeangel/rox_models_go v0.2.23 h1:DJwZGhOO5qAZ9lM2E+EosaX/NAjQRLKsuoh1cHv92xg=
+github.com/touchmeangel/rox_models_go v0.2.23/go.mod h1:VFd9twWJ/q1svR+yzLMVXZ34ezG01tutODyYzMALkGU=
 github.com/touchmeangel/rox_proto v0.0.0-20260802194648-f515c39411d8 h1:rC5IPsGXZOgFEVCjEQ8do3vEHua0fzbf58kaV19NH5U=
 github.com/touchmeangel/rox_proto v0.0.0-20260802194648-f515c39411d8/go.mod h1:bXAggi/BSa+8BahPjpyHu88y7K0AmJ+vyvMSGZdqf/Q=
 github.com/touchmeangel/rox_proto v0.2.8 h1:LwJ/b5zKmVLv3vzTSFmVRHJJczKMjdfb3iUBFEEehas=
