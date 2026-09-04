@@ -35,15 +35,24 @@ const (
 const cleanupTimeout = 30 * time.Second
 
 type Client struct {
-	cli       *containerd.Client
-	namespace string
-	logger    *slog.Logger
+	cli               *containerd.Client
+	namespace         string
+	logger            *slog.Logger
+	dockerHubUsername string
+	dockerHubToken    string
 }
 
 type Option func(*Client)
 
 func WithLogger(l *slog.Logger) Option {
 	return func(c *Client) { c.logger = l }
+}
+
+func WithRegistryCredentials(username, token string) Option {
+	return func(c *Client) {
+		c.dockerHubUsername = username
+		c.dockerHubToken = token
+	}
 }
 
 func New(opts ...Option) (*Client, error) {
@@ -99,6 +108,40 @@ func normalizeRef(ref string) string {
 	return "docker.io/" + ref
 }
 
+func (c *Client) credentialsFor(host string) (string, string, error) {
+	if isDockerHubHost(host) && c.dockerHubUsername != "" && c.dockerHubToken != "" {
+		return c.dockerHubUsername, c.dockerHubToken, nil
+	}
+
+	cfg, err := loadDockerConfig()
+	if err != nil {
+		return "", "", nil
+	}
+
+	for _, key := range candidateAuthKeys(host) {
+		switch {
+		case cfg.CredHelpers[key] != "":
+			if u, s, err := runCredHelper(cfg.CredHelpers[key], key); err == nil && (u != "" || s != "") {
+				return u, s, nil
+			}
+		case cfg.CredsStore != "":
+			if u, s, err := runCredHelper(cfg.CredsStore, key); err == nil && (u != "" || s != "") {
+				return u, s, nil
+			}
+		default:
+			if entry, ok := cfg.Auths[key]; ok && entry.Auth != "" {
+				if decoded, err := decodeBasicAuth(entry.Auth); err == nil {
+					if u, p, found := strings.Cut(decoded, ":"); found {
+						return u, p, nil
+					}
+				}
+			}
+		}
+	}
+
+	return "", "", nil
+}
+
 func (c *Client) EnsureImage(parent context.Context, ref string, onProgress PullProgressFunc) error {
 	ref = normalizeRef(ref)
 	ctx := c.ctx(parent)
@@ -116,7 +159,7 @@ func (c *Client) PullImage(parent context.Context, ref string, onProgress PullPr
 
 	resolver := docker.NewResolver(docker.ResolverOptions{
 		Hosts: docker.ConfigureDefaultRegistries(
-			docker.WithAuthorizer(docker.NewDockerAuthorizer(docker.WithAuthCreds(credentialsFor))),
+			docker.WithAuthorizer(docker.NewDockerAuthorizer(docker.WithAuthCreds(c.credentialsFor))),
 		),
 	})
 

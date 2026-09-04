@@ -26,7 +26,7 @@ func main() {
 		return
 	}
 
-	client, err := containerd.New()
+	client, err := containerd.New(containerd.WithRegistryCredentials(cfg.DockerHubUsername, cfg.DockerHubToken))
 	if err != nil {
 		logger.Error("containerd client init failed", "error", err)
 		return

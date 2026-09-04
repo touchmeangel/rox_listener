@@ -17,6 +17,9 @@ type Config struct {
 	S3AccessKeyID     string
 	S3SecretAccessKey string
 	S3Bucket          string
+
+	DockerHubUsername string
+	DockerHubToken    string
 }
 
 func LoadConfig() (Config, error) {
@@ -28,6 +31,8 @@ func LoadConfig() (Config, error) {
 		S3AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
 		S3SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
 		S3Bucket:          os.Getenv("S3_BUCKET"),
+		DockerHubUsername: os.Getenv("DOCKERHUB_USERNAME"),
+		DockerHubToken:    os.Getenv("DOCKERHUB_TOKEN"),
 	}
 
 	var missing []string
@@ -43,6 +48,8 @@ func LoadConfig() (Config, error) {
 	checkReq("S3_ACCESS_KEY_ID", cfg.S3AccessKeyID)
 	checkReq("S3_SECRET_ACCESS_KEY", cfg.S3SecretAccessKey)
 	checkReq("S3_BUCKET", cfg.S3Bucket)
+	checkReq("DOCKERHUB_USERNAME", cfg.DockerHubUsername)
+	checkReq("DOCKERHUB_TOKEN", cfg.DockerHubToken)
 
 	raw := os.Getenv("MAX_CONCURRENT_TASKS")
 	if raw == "" {
