@@ -87,7 +87,20 @@ func (c *Client) Ping(parent context.Context) error {
 
 type PullProgressFunc func(status, id string, current, total int64)
 
+func normalizeRef(ref string) string {
+	firstSlash := strings.IndexByte(ref, '/')
+	if firstSlash == -1 {
+		return "docker.io/library/" + ref
+	}
+	firstSegment := ref[:firstSlash]
+	if firstSegment == "localhost" || strings.ContainsAny(firstSegment, ".:") {
+		return ref
+	}
+	return "docker.io/" + ref
+}
+
 func (c *Client) EnsureImage(parent context.Context, ref string, onProgress PullProgressFunc) error {
+	ref = normalizeRef(ref)
 	ctx := c.ctx(parent)
 	if _, err := c.cli.ImageService().Get(ctx, ref); err == nil {
 		return nil
@@ -98,6 +111,7 @@ func (c *Client) EnsureImage(parent context.Context, ref string, onProgress Pull
 }
 
 func (c *Client) PullImage(parent context.Context, ref string, onProgress PullProgressFunc) error {
+	ref = normalizeRef(ref)
 	ctx := c.ctx(parent)
 
 	resolver := docker.NewResolver(docker.ResolverOptions{
@@ -212,6 +226,7 @@ func runtimeShimFor(name string) string {
 var stdoutMu sync.Mutex
 
 func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
+	spec.Image = normalizeRef(spec.Image)
 	ctx := c.ctx(parent)
 
 	if err := c.EnsureImage(parent, spec.Image, nil); err != nil {
