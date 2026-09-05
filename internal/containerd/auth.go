@@ -91,33 +91,3 @@ func runCredHelper(store, host string) (username, secret string, err error) {
 	}
 	return res.Username, res.Secret, nil
 }
-
-func credentialsFor(host string) (string, string, error) {
-	cfg, err := loadDockerConfig()
-	if err != nil {
-		return "", "", nil
-	}
-
-	for _, key := range candidateAuthKeys(host) {
-		switch {
-		case cfg.CredHelpers[key] != "":
-			if u, s, err := runCredHelper(cfg.CredHelpers[key], key); err == nil && (u != "" || s != "") {
-				return u, s, nil
-			}
-		case cfg.CredsStore != "":
-			if u, s, err := runCredHelper(cfg.CredsStore, key); err == nil && (u != "" || s != "") {
-				return u, s, nil
-			}
-		default:
-			if entry, ok := cfg.Auths[key]; ok && entry.Auth != "" {
-				if decoded, err := decodeBasicAuth(entry.Auth); err == nil {
-					if u, p, found := strings.Cut(decoded, ":"); found {
-						return u, p, nil
-					}
-				}
-			}
-		}
-	}
-
-	return "", "", nil
-}
