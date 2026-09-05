@@ -24,6 +24,7 @@ import (
 	"github.com/containerd/errdefs"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -40,6 +41,7 @@ type Client struct {
 	logger            *slog.Logger
 	dockerHubUsername string
 	dockerHubToken    string
+	pullGroup         singleflight.Group
 }
 
 type Option func(*Client)
@@ -150,7 +152,11 @@ func (c *Client) EnsureImage(parent context.Context, ref string, onProgress Pull
 	} else if !errdefs.IsNotFound(err) {
 		return fmt.Errorf("checking for image %s: %w", ref, err)
 	}
-	return c.PullImage(parent, ref, onProgress)
+
+	_, err, _ := c.pullGroup.Do(ref, func() (any, error) {
+		return nil, c.PullImage(context.Background(), ref, onProgress)
+	})
+	return err
 }
 
 func (c *Client) PullImage(parent context.Context, ref string, onProgress PullProgressFunc) error {
