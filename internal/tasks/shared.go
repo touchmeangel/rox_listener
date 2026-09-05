@@ -66,7 +66,7 @@ func run(ctx context.Context, client *containerd.Client, runtime, name string, c
 		Runtime:  runtime,
 		Mounts:   mounts,
 		Populate: populate,
-		Quiet:    true,
+		Quiet:    false,
 	})
 	result.ExitCode = exitCode
 	if runErr != nil {
