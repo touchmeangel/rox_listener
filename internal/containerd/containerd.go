@@ -264,6 +264,12 @@ type RunSpec struct {
 var stdoutMu sync.Mutex
 
 func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
+	if deadline, ok := parent.Deadline(); ok {
+		c.logger.Warn("Run: context carries a deadline", "deadline", deadline, "remaining", time.Until(deadline))
+	} else {
+		c.logger.Info("Run: context has no deadline")
+	}
+
 	spec.Image = normalizeRef(spec.Image)
 	ctx := c.ctx(parent)
 
