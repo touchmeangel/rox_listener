@@ -442,9 +442,13 @@ func (c *Client) forceRemove(ctx context.Context, name string) {
 		return
 	}
 	if task, err := cont.Task(ctx, nil); err == nil {
-		_, _ = task.Delete(ctx, containerd.WithProcessKill)
+		if _, err := task.Delete(ctx, containerd.WithProcessKill); err != nil {
+			c.logger.Warn("forceRemove: failed to delete leftover task", "container", name, "error", err)
+		}
 	}
-	_ = cont.Delete(ctx, containerd.WithSnapshotCleanup)
+	if err := cont.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
+		c.logger.Warn("forceRemove: failed to delete leftover container/snapshot", "container", name, "error", err)
+	}
 }
 
 func (c *Client) resolveArgs(ctx context.Context, img containerd.Image, cmd []string) ([]string, error) {
