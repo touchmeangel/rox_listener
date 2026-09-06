@@ -261,17 +261,6 @@ type RunSpec struct {
 	Populate   PopulateFunc
 }
 
-func runtimeShimFor(name string) string {
-	switch name {
-	case "", "runc":
-		return ""
-	case "kata", "kata-runtime":
-		return "io.containerd.kata.v2"
-	default:
-		return name
-	}
-}
-
 var stdoutMu sync.Mutex
 
 const maxCreateRetries = 3
@@ -325,8 +314,8 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		containerd.WithNewSnapshot(spec.Name+"-snapshot", img),
 		containerd.WithNewSpec(specOpts...),
 	}
-	if shim := runtimeShimFor(spec.Runtime); shim != "" {
-		containerOpts = append(containerOpts, containerd.WithRuntime(shim, nil))
+	if spec.Runtime != "" {
+		containerOpts = append(containerOpts, containerd.WithRuntime(spec.Runtime, nil))
 	}
 
 	var cont containerd.Container
