@@ -263,17 +263,6 @@ type RunSpec struct {
 
 var stdoutMu sync.Mutex
 
-const maxCreateRetries = 3
-
-func isTransientSnapshotErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "snapshotter.v1.overlayfs/snapshots") &&
-		strings.Contains(msg, "no such file or directory")
-}
-
 func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 	spec.Image = normalizeRef(spec.Image)
 	ctx := c.ctx(parent)
@@ -318,19 +307,9 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		containerOpts = append(containerOpts, containerd.WithRuntime(spec.Runtime, nil))
 	}
 
-	var cont containerd.Container
-	for attempt := 1; ; attempt++ {
-		cont, err = c.cli.NewContainer(ctx, spec.Name, containerOpts...)
-		if err == nil {
-			break
-		}
-		if !isTransientSnapshotErr(err) || attempt >= maxCreateRetries {
-			return -1, fmt.Errorf("creating container: %w", err)
-		}
-		c.logger.Warn("transient snapshotter error creating container, retrying",
-			"container", spec.Name, "attempt", attempt, "error", err)
-		c.forceRemove(ctx, spec.Name)
-		time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+	cont, err := c.cli.NewContainer(ctx, spec.Name, containerOpts...)
+	if err != nil {
+		return -1, fmt.Errorf("creating container: %w", err)
 	}
 	defer func() {
 		delCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
