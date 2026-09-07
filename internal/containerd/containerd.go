@@ -264,7 +264,6 @@ type RunSpec struct {
 var stdoutMu sync.Mutex
 
 func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
-	fmt.Printf("build marker........ 1488\n")
 	spec.Image = normalizeRef(spec.Image)
 	ctx := c.ctx(parent)
 
