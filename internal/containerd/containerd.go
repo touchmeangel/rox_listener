@@ -280,7 +280,7 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 	if err != nil {
 		return -1, fmt.Errorf("creating lease: %w", err)
 	}
-	defer done(ctx)
+	defer func() { _ = done(ctx) }()
 
 	c.forceRemove(ctx, spec.Name)
 
