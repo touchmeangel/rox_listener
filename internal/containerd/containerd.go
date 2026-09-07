@@ -433,21 +433,16 @@ func (c *Client) ReapOrphans(parent context.Context) error {
 
 func (c *Client) forceRemove(ctx context.Context, name string) {
 	cont, err := c.cli.LoadContainer(ctx, name)
-	if err == nil {
-		if task, err := cont.Task(ctx, nil); err == nil {
-			if _, err := task.Delete(ctx, containerd.WithProcessKill); err != nil {
-				c.logger.Warn("forceRemove: failed to delete leftover task", "container", name, "error", err)
-			}
-		}
-		if err := cont.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
-			c.logger.Warn("forceRemove: failed to delete leftover container/snapshot", "container", name, "error", err)
-		}
+	if err != nil {
 		return
 	}
-
-	snapKey := name + "-snapshot"
-	if err := c.cli.SnapshotService(defaultSnapshot).Remove(ctx, snapKey); err != nil && !errdefs.IsNotFound(err) {
-		c.logger.Warn("forceRemove: failed to delete orphaned snapshot", "snapshot", snapKey, "error", err)
+	if task, err := cont.Task(ctx, nil); err == nil {
+		if _, err := task.Delete(ctx, containerd.WithProcessKill); err != nil {
+			c.logger.Warn("forceRemove: failed to delete leftover task", "container", name, "error", err)
+		}
+	}
+	if err := cont.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
+		c.logger.Warn("forceRemove: failed to delete leftover container/snapshot", "container", name, "error", err)
 	}
 }
 
