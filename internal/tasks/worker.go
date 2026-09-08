@@ -15,7 +15,7 @@ import (
 
 func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket string, req *taskpb.RunWorkerRequest) (*taskpb.RunWorkerResponse, error) {
 	runID := req.GetRunId()
-	workerID := req.GetWorkerId()
+	// workerID := req.GetWorkerId()
 	missionID := req.GetMissionId()
 	workspaceName := req.GetWorkspaceName()
 	mission := json.RawMessage(req.GetMission())
@@ -77,7 +77,7 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s
 		return storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, workDir)
 	}
 
-	name := fmt.Sprintf("rox-worker-%s-%s", workerID, randomID())
+	name := fmt.Sprintf("rox-worker-%s", randomID())
 	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, populate)
 	if err != nil {
 		return nil, err
