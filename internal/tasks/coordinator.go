@@ -15,7 +15,7 @@ import (
 func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket string, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
 	runID := req.GetRunId()
 	workspaceName := req.GetWorkspaceName()
-	// coordinatorID := req.GetCoordinatorId()
+	coordinatorID := req.GetCoordinatorId()
 
 	scratchDir, cleanup, err := newWorkspace()
 	if err != nil {
@@ -38,6 +38,14 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 		return nil, fmt.Errorf("preparing output file: %w", err)
 	}
 
+	workHostDir := filepath.Join(scratchDir, "work")
+	if err := os.MkdirAll(workHostDir, 0o755); err != nil {
+		return nil, fmt.Errorf("creating local workspace dir: %w", err)
+	}
+	if err := storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, workHostDir); err != nil {
+		return nil, fmt.Errorf("downloading workspace: %w", err)
+	}
+
 	cmd := []string{
 		"coordinator",
 		"--work-path", "/work",
@@ -49,18 +57,11 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 		{Source: configFile, Target: "/app/config.json", ReadOnly: true},
 		{Source: debugLog, Target: "/app/debug.log", ReadOnly: false},
 		{Source: outputHostPath, Target: "/app/coordinator_results.json", ReadOnly: false},
+		{Source: workHostDir, Target: "/work", ReadOnly: false},
 	}
 
-	populate := func(rootfs string) error {
-		workDir := filepath.Join(rootfs, "work")
-		if err := os.MkdirAll(workDir, 0o755); err != nil {
-			return fmt.Errorf("creating /work in container rootfs: %w", err)
-		}
-		return storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, workDir)
-	}
-
-	name := fmt.Sprintf("rox-coordinator-%s", randomID())
-	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, populate)
+	name := fmt.Sprintf("rox-coordinator-%s-%s-%s", runID, coordinatorID, randomID())
+	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, nil) // no Populate needed anymore
 	if err != nil {
 		return nil, err
 	}
