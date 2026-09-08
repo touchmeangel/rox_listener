@@ -13,14 +13,14 @@ import (
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 )
 
-func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket string, req *taskpb.RunWorkerRequest) (*taskpb.RunWorkerResponse, error) {
+func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, req *taskpb.RunWorkerRequest) (*taskpb.RunWorkerResponse, error) {
 	runID := req.GetRunId()
 	// workerID := req.GetWorkerId()
 	workspaceName := req.GetWorkspaceName()
 	missionID := req.GetMissionId()
 	mission := json.RawMessage(req.GetMission())
 
-	scratchDir, cleanup, err := newWorkspace()
+	scratchDir, cleanup, err := newWorkspace(workDir)
 	if err != nil {
 		return nil, err
 	}

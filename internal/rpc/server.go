@@ -24,14 +24,16 @@ type Server struct {
 	runtime  string
 	s3Client *s3.Client
 	s3Bucket string
+	workDir  string
 }
 
-func NewServer(client *containerd.Client, runtime string, s3Client *s3.Client, s3Bucket string) *Server {
+func NewServer(client *containerd.Client, runtime string, s3Client *s3.Client, s3Bucket, workDir string) *Server {
 	return &Server{
 		client:   client,
 		runtime:  runtime,
 		s3Client: s3Client,
 		s3Bucket: s3Bucket,
+		workDir:  workDir,
 	}
 }
 

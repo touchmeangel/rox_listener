@@ -48,8 +48,11 @@ func touchEmpty(path string) error {
 	return f.Close()
 }
 
-func newWorkspace() (dir string, cleanup func(), err error) {
-	dir, err = os.MkdirTemp("", "rox-work-*")
+func newWorkspace(baseDir string) (dir string, cleanup func(), err error) {
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return "", nil, fmt.Errorf("ensuring work base dir exists: %w", err)
+	}
+	dir, err = os.MkdirTemp(baseDir, "rox-work-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("creating workspace: %w", err)
 	}

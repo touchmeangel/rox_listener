@@ -12,12 +12,12 @@ import (
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 )
 
-func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket string, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
+func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
 	runID := req.GetRunId()
 	// coordinatorID := req.GetCoordinatorId()
 	workspaceName := req.GetWorkspaceName()
 
-	scratchDir, cleanup, err := newWorkspace()
+	scratchDir, cleanup, err := newWorkspace(workDir)
 	if err != nil {
 		return nil, err
 	}

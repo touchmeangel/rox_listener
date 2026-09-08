@@ -20,6 +20,8 @@ type Config struct {
 
 	DockerHubUsername string
 	DockerHubToken    string
+
+	WorkDir string
 }
 
 func LoadConfig() (Config, error) {
@@ -33,6 +35,7 @@ func LoadConfig() (Config, error) {
 		S3Bucket:          os.Getenv("S3_BUCKET"),
 		DockerHubUsername: os.Getenv("DOCKERHUB_USERNAME"),
 		DockerHubToken:    os.Getenv("DOCKERHUB_TOKEN"),
+		WorkDir:           os.Getenv("WORK_DIR"),
 	}
 
 	var missing []string
@@ -50,6 +53,7 @@ func LoadConfig() (Config, error) {
 	checkReq("S3_BUCKET", cfg.S3Bucket)
 	checkReq("DOCKERHUB_USERNAME", cfg.DockerHubUsername)
 	checkReq("DOCKERHUB_TOKEN", cfg.DockerHubToken)
+	checkReq("WORK_DIR", cfg.WorkDir)
 
 	raw := os.Getenv("MAX_CONCURRENT_TASKS")
 	if raw == "" {
