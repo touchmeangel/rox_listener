@@ -318,7 +318,7 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		return -1, fmt.Errorf("creating container: %w", err)
 	}
 	defer func() {
-		delCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		delCtx, cancel := context.WithTimeout(c.ctx(context.Background()), cleanupTimeout)
 		defer cancel()
 		if err := cont.Delete(delCtx, containerd.WithSnapshotCleanup); err != nil {
 			c.logger.Error("cleanup: failed to delete container", "container", spec.Name, "error", err)
@@ -343,7 +343,7 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		return -1, fmt.Errorf("creating task: %w", err)
 	}
 	defer func() {
-		delCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		delCtx, cancel := context.WithTimeout(c.ctx(context.Background()), cleanupTimeout)
 		defer cancel()
 		if _, err := task.Delete(delCtx); err != nil {
 			c.logger.Error("cleanup: failed to delete task", "container", spec.Name, "error", err)
@@ -366,7 +366,7 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		}
 		return int64(status.ExitCode()), nil
 	case <-parent.Done():
-		_ = task.Kill(context.Background(), syscall.SIGKILL)
+		_ = task.Kill(c.ctx(context.Background()), syscall.SIGKILL)
 		<-exitCh
 		return -1, parent.Err()
 	}
