@@ -14,8 +14,8 @@ import (
 
 func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket string, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
 	runID := req.GetRunId()
-	workspaceName := req.GetWorkspaceName()
 	// coordinatorID := req.GetCoordinatorId()
+	workspaceName := req.GetWorkspaceName()
 
 	scratchDir, cleanup, err := newWorkspace()
 	if err != nil {
@@ -61,7 +61,7 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 	}
 
 	name := fmt.Sprintf("rox-coordinator-%s", randomID())
-	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, nil) // no Populate needed anymore
+	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, nil)
 	if err != nil {
 		return nil, err
 	}

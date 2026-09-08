@@ -16,8 +16,8 @@ import (
 func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket string, req *taskpb.RunWorkerRequest) (*taskpb.RunWorkerResponse, error) {
 	runID := req.GetRunId()
 	// workerID := req.GetWorkerId()
-	missionID := req.GetMissionId()
 	workspaceName := req.GetWorkspaceName()
+	missionID := req.GetMissionId()
 	mission := json.RawMessage(req.GetMission())
 
 	scratchDir, cleanup, err := newWorkspace()
@@ -53,6 +53,14 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s
 		return nil, fmt.Errorf("preparing output file: %w", err)
 	}
 
+	workHostDir := filepath.Join(scratchDir, "work")
+	if err := os.MkdirAll(workHostDir, 0o755); err != nil {
+		return nil, fmt.Errorf("creating local workspace dir: %w", err)
+	}
+	if err := storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, workHostDir); err != nil {
+		return nil, fmt.Errorf("downloading workspace: %w", err)
+	}
+
 	cmd := []string{
 		"worker",
 		"--work-path", "/work",
@@ -67,18 +75,11 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s
 		{Source: debugLog, Target: "/app/debug.log", ReadOnly: false},
 		{Source: missionsFile, Target: "/app/coordinator_results.json", ReadOnly: true},
 		{Source: outputHostPath, Target: "/app/" + outputFilename, ReadOnly: false},
-	}
-
-	populate := func(rootfs string) error {
-		workDir := filepath.Join(rootfs, "work")
-		if err := os.MkdirAll(workDir, 0o755); err != nil {
-			return fmt.Errorf("creating /work in container rootfs: %w", err)
-		}
-		return storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, workDir)
+		{Source: workHostDir, Target: "/work", ReadOnly: false},
 	}
 
 	name := fmt.Sprintf("rox-worker-%s", randomID())
-	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, populate)
+	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, nil)
 	if err != nil {
 		return nil, err
 	}
