@@ -77,7 +77,7 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s
 		return storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, workDir)
 	}
 
-	name := fmt.Sprintf("rox-worker-%s-%s-%s-%s", runID, workerID, missionID, randomID())
+	name := fmt.Sprintf("rox-worker-%s-%s", workerID, randomID())
 	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, populate)
 	if err != nil {
 		return nil, err

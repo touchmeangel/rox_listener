@@ -59,7 +59,7 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 		return storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, workDir)
 	}
 
-	name := fmt.Sprintf("rox-coordinator-%s-%s-%s", runID, coordinatorID, randomID())
+	name := fmt.Sprintf("rox-coordinator-%s-%s", coordinatorID, randomID())
 	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, populate)
 	if err != nil {
 		return nil, err
