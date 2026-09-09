@@ -343,8 +343,9 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		return -1, fmt.Errorf("creating task: %w", err)
 	}
 	defer func() {
-		delCtx, cancel := context.WithTimeout(c.ctx(context.Background()), cleanupTimeout)
+		delCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 		defer cancel()
+		_ = task.Kill(delCtx, syscall.SIGKILL)
 		if _, err := task.Delete(delCtx); err != nil {
 			c.logger.Error("cleanup: failed to delete task", "container", spec.Name, "error", err)
 		}
