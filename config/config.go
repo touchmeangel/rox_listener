@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -98,29 +100,19 @@ func LoadConfig() (Config, error) {
 }
 
 func parseEnvFile(path string) ([]string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	if _, err := os.Stat(path); err != nil {
 		return nil, err
 	}
-	var env []string
-	for i, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			return nil, fmt.Errorf("line %d: expected KEY=VALUE, got %q", i+1, line)
-		}
-		key = strings.TrimSpace(key)
-		if key == "" {
-			return nil, fmt.Errorf("line %d: empty key", i+1)
-		}
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		env = append(env, key+"="+value)
+	vars, err := godotenv.Read(path)
+	if err != nil {
+		return nil, fmt.Errorf("parsing env file: %w", err)
 	}
-	if len(env) == 0 {
+	if len(vars) == 0 {
 		return nil, fmt.Errorf("no KEY=VALUE entries found")
+	}
+	env := make([]string, 0, len(vars))
+	for k, v := range vars {
+		env = append(env, k+"="+v)
 	}
 	return env, nil
 }
