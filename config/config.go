@@ -26,6 +26,9 @@ type Config struct {
 
 	AppConfigPath string
 	AppConfig     json.RawMessage
+
+	AgentEnvPath string
+	AgentEnv     []string
 }
 
 func LoadConfig() (Config, error) {
@@ -41,6 +44,7 @@ func LoadConfig() (Config, error) {
 		DockerHubToken:    os.Getenv("DOCKERHUB_TOKEN"),
 		WorkDir:           os.Getenv("WORK_DIR"),
 		AppConfigPath:     os.Getenv("APP_CONFIG_PATH"),
+		AgentEnvPath:      os.Getenv("AGENT_ENV_PATH"),
 	}
 
 	var missing []string
@@ -60,6 +64,7 @@ func LoadConfig() (Config, error) {
 	checkReq("DOCKERHUB_TOKEN", cfg.DockerHubToken)
 	checkReq("WORK_DIR", cfg.WorkDir)
 	checkReq("APP_CONFIG_PATH", cfg.AppConfigPath)
+	checkReq("AGENT_ENV_PATH", cfg.AgentEnvPath)
 
 	raw := os.Getenv("MAX_CONCURRENT_TASKS")
 	if raw == "" {
@@ -83,5 +88,39 @@ func LoadConfig() (Config, error) {
 	}
 	cfg.AppConfig = json.RawMessage(data)
 
+	agentEnv, err := parseEnvFile(cfg.AgentEnvPath)
+	if err != nil {
+		return cfg, fmt.Errorf("reading AGENT_ENV_PATH %q: %w", cfg.AgentEnvPath, err)
+	}
+	cfg.AgentEnv = agentEnv
+
 	return cfg, nil
+}
+
+func parseEnvFile(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var env []string
+	for i, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			return nil, fmt.Errorf("line %d: expected KEY=VALUE, got %q", i+1, line)
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("line %d: empty key", i+1)
+		}
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		env = append(env, key+"="+value)
+	}
+	if len(env) == 0 {
+		return nil, fmt.Errorf("no KEY=VALUE entries found")
+	}
+	return env, nil
 }

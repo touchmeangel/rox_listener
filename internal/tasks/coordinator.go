@@ -13,7 +13,7 @@ import (
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 )
 
-func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, appConfig json.RawMessage, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
+func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, appConfig json.RawMessage, agentEnv []string, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
 	runID := req.GetRunId()
 	workspaceName := req.GetWorkspaceName()
 
@@ -61,7 +61,7 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 	}
 
 	name := fmt.Sprintf("rox-coordinator-%s", randomID())
-	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, nil)
+	result, err := run(ctx, client, runtime, name, cmd, mounts, agentEnv, outputHostPath, nil)
 	if err != nil {
 		return nil, err
 	}

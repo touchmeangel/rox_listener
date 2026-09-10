@@ -13,7 +13,7 @@ import (
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 )
 
-func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, appConfig json.RawMessage, req *taskpb.RunWorkerRequest) (*taskpb.RunWorkerResponse, error) {
+func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, appConfig json.RawMessage, agentEnv []string, req *taskpb.RunWorkerRequest) (*taskpb.RunWorkerResponse, error) {
 	runID := req.GetRunId()
 	workspaceName := req.GetWorkspaceName()
 	missionID := req.GetMissionId()
@@ -78,7 +78,7 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s
 	}
 
 	name := fmt.Sprintf("rox-worker-%s", randomID())
-	result, err := run(ctx, client, runtime, name, cmd, mounts, outputHostPath, nil)
+	result, err := run(ctx, client, runtime, name, cmd, mounts, agentEnv, outputHostPath, nil)
 	if err != nil {
 		return nil, err
 	}

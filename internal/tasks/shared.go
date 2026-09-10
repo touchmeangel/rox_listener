@@ -59,13 +59,14 @@ func newWorkspace(baseDir string) (dir string, cleanup func(), err error) {
 	return dir, func() { _ = os.RemoveAll(dir) }, nil
 }
 
-func run(ctx context.Context, client *containerd.Client, runtime, name string, cmd []string, mounts []containerd.Mount, outputHostPath string, populate containerd.PopulateFunc) (containerResult, error) {
+func run(ctx context.Context, client *containerd.Client, runtime, name string, cmd []string, mounts []containerd.Mount, env []string, outputHostPath string, populate containerd.PopulateFunc) (containerResult, error) {
 	result := containerResult{RunID: name}
 
 	exitCode, runErr := client.Run(ctx, containerd.RunSpec{
 		Image:    Image,
 		Name:     name,
 		Cmd:      cmd,
+		Env:      env,
 		Runtime:  runtime,
 		Mounts:   mounts,
 		Populate: populate,

@@ -27,9 +27,10 @@ type Server struct {
 	s3Bucket  string
 	workDir   string
 	appConfig json.RawMessage
+	agentEnv  []string
 }
 
-func NewServer(client *containerd.Client, runtime string, s3Client *s3.Client, s3Bucket, workDir string, appConfig json.RawMessage) *Server {
+func NewServer(client *containerd.Client, runtime string, s3Client *s3.Client, s3Bucket, workDir string, appConfig json.RawMessage, agentEnv []string) *Server {
 	return &Server{
 		client:    client,
 		runtime:   runtime,
@@ -37,6 +38,7 @@ func NewServer(client *containerd.Client, runtime string, s3Client *s3.Client, s
 		s3Bucket:  s3Bucket,
 		workDir:   workDir,
 		appConfig: appConfig,
+		agentEnv:  agentEnv,
 	}
 }
 

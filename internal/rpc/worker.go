@@ -24,7 +24,7 @@ func (s *Server) RunWorker(ctx context.Context, req *taskpb.RunWorkerRequest) (*
 		return nil, status.Error(codes.InvalidArgument, "mission must be valid, non-empty JSON")
 	}
 
-	result, err := tasks.RunWorker(ctx, s.client, s.runtime, s.s3Client, s.s3Bucket, s.workDir, s.appConfig, req)
+	result, err := tasks.RunWorker(ctx, s.client, s.runtime, s.s3Client, s.s3Bucket, s.workDir, s.appConfig, s.agentEnv, req)
 	if err != nil {
 		return nil, toStatus(err)
 	}
