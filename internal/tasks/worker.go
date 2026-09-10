@@ -13,9 +13,8 @@ import (
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 )
 
-func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, req *taskpb.RunWorkerRequest) (*taskpb.RunWorkerResponse, error) {
+func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, appConfig json.RawMessage, req *taskpb.RunWorkerRequest) (*taskpb.RunWorkerResponse, error) {
 	runID := req.GetRunId()
-	// workerID := req.GetWorkerId()
 	workspaceName := req.GetWorkspaceName()
 	missionID := req.GetMissionId()
 	mission := json.RawMessage(req.GetMission())
@@ -27,8 +26,8 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s
 	defer cleanup()
 
 	configFile := filepath.Join(scratchDir, "config.json")
-	if err := os.WriteFile(configFile, []byte("{}"), 0o644); err != nil {
-		return nil, fmt.Errorf("preparing placeholder config: %w", err)
+	if err := os.WriteFile(configFile, appConfig, 0o644); err != nil {
+		return nil, fmt.Errorf("writing app config: %w", err)
 	}
 
 	missionsFileContent, err := json.Marshal(struct {

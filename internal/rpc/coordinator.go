@@ -18,7 +18,7 @@ func (s *Server) RunCoordinator(ctx context.Context, req *taskpb.RunCoordinatorR
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	result, err := tasks.RunCoordinator(ctx, s.client, s.runtime, s.s3Client, s.s3Bucket, s.workDir, req)
+	result, err := tasks.RunCoordinator(ctx, s.client, s.runtime, s.s3Client, s.s3Bucket, s.workDir, s.appConfig, req)
 	if err != nil {
 		return nil, toStatus(err)
 	}

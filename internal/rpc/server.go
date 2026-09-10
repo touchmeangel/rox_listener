@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,20 +21,22 @@ import (
 type Server struct {
 	taskpb.UnimplementedTaskServiceServer
 
-	client   *containerd.Client
-	runtime  string
-	s3Client *s3.Client
-	s3Bucket string
-	workDir  string
+	client    *containerd.Client
+	runtime   string
+	s3Client  *s3.Client
+	s3Bucket  string
+	workDir   string
+	appConfig json.RawMessage
 }
 
-func NewServer(client *containerd.Client, runtime string, s3Client *s3.Client, s3Bucket, workDir string) *Server {
+func NewServer(client *containerd.Client, runtime string, s3Client *s3.Client, s3Bucket, workDir string, appConfig json.RawMessage) *Server {
 	return &Server{
-		client:   client,
-		runtime:  runtime,
-		s3Client: s3Client,
-		s3Bucket: s3Bucket,
-		workDir:  workDir,
+		client:    client,
+		runtime:   runtime,
+		s3Client:  s3Client,
+		s3Bucket:  s3Bucket,
+		workDir:   workDir,
+		appConfig: appConfig,
 	}
 }
 

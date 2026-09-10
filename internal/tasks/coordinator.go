@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,9 +13,8 @@ import (
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 )
 
-func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
+func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, appConfig json.RawMessage, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
 	runID := req.GetRunId()
-	// coordinatorID := req.GetCoordinatorId()
 	workspaceName := req.GetWorkspaceName()
 
 	scratchDir, cleanup, err := newWorkspace(workDir)
@@ -24,8 +24,8 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 	defer cleanup()
 
 	configFile := filepath.Join(scratchDir, "config.json")
-	if err := os.WriteFile(configFile, []byte("{}"), 0o644); err != nil {
-		return nil, fmt.Errorf("preparing placeholder config: %w", err)
+	if err := os.WriteFile(configFile, appConfig, 0o644); err != nil {
+		return nil, fmt.Errorf("writing app config: %w", err)
 	}
 
 	debugLog := filepath.Join(scratchDir, "debug.log")

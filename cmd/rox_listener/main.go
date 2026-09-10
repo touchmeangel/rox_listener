@@ -65,7 +65,7 @@ func main() {
 		logger.Error("storage connection failed", "error", err)
 		return
 	}
-	srv := rpc.NewServer(client, cfg.Runtime, s3, cfg.S3Bucket, cfg.WorkDir)
+	srv := rpc.NewServer(client, cfg.Runtime, s3, cfg.S3Bucket, cfg.WorkDir, cfg.AppConfig)
 	taskpb.RegisterTaskServiceServer(grpcServer, srv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

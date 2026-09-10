@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,6 +23,9 @@ type Config struct {
 	DockerHubToken    string
 
 	WorkDir string
+
+	AppConfigPath string
+	AppConfig     json.RawMessage
 }
 
 func LoadConfig() (Config, error) {
@@ -36,6 +40,7 @@ func LoadConfig() (Config, error) {
 		DockerHubUsername: os.Getenv("DOCKERHUB_USERNAME"),
 		DockerHubToken:    os.Getenv("DOCKERHUB_TOKEN"),
 		WorkDir:           os.Getenv("WORK_DIR"),
+		AppConfigPath:     os.Getenv("APP_CONFIG_PATH"),
 	}
 
 	var missing []string
@@ -54,6 +59,7 @@ func LoadConfig() (Config, error) {
 	checkReq("DOCKERHUB_USERNAME", cfg.DockerHubUsername)
 	checkReq("DOCKERHUB_TOKEN", cfg.DockerHubToken)
 	checkReq("WORK_DIR", cfg.WorkDir)
+	checkReq("APP_CONFIG_PATH", cfg.AppConfigPath)
 
 	raw := os.Getenv("MAX_CONCURRENT_TASKS")
 	if raw == "" {
@@ -67,5 +73,15 @@ func LoadConfig() (Config, error) {
 	if len(missing) > 0 {
 		return cfg, fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
 	}
+
+	data, err := os.ReadFile(cfg.AppConfigPath)
+	if err != nil {
+		return cfg, fmt.Errorf("reading APP_CONFIG_PATH %q: %w", cfg.AppConfigPath, err)
+	}
+	if !json.Valid(data) {
+		return cfg, fmt.Errorf("APP_CONFIG_PATH %q does not contain valid JSON", cfg.AppConfigPath)
+	}
+	cfg.AppConfig = json.RawMessage(data)
+
 	return cfg, nil
 }
