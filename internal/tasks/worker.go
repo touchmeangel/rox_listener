@@ -52,16 +52,22 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s
 		return nil, fmt.Errorf("preparing output file: %w", err)
 	}
 
+	repoHostDir := filepath.Join(scratchDir, "repo")
+	if err := os.MkdirAll(repoHostDir, 0o755); err != nil {
+		return nil, fmt.Errorf("creating local repo dir: %w", err)
+	}
+	if err := storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, repoHostDir); err != nil {
+		return nil, fmt.Errorf("downloading workspace: %w", err)
+	}
+
 	workHostDir := filepath.Join(scratchDir, "work")
 	if err := os.MkdirAll(workHostDir, 0o755); err != nil {
-		return nil, fmt.Errorf("creating local workspace dir: %w", err)
-	}
-	if err := storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, workHostDir); err != nil {
-		return nil, fmt.Errorf("downloading workspace: %w", err)
+		return nil, fmt.Errorf("creating local work dir: %w", err)
 	}
 
 	cmd := []string{
 		"worker",
+		"--repo-path", "/project",
 		"--work-path", "/work",
 		"--output", "/app/" + outputFilename,
 		"--debug", "/app/debug.log",
@@ -74,6 +80,7 @@ func RunWorker(ctx context.Context, client *containerd.Client, runtime string, s
 		{Source: debugLog, Target: "/app/debug.log", ReadOnly: false},
 		{Source: missionsFile, Target: "/app/coordinator_results.json", ReadOnly: true},
 		{Source: outputHostPath, Target: "/app/" + outputFilename, ReadOnly: false},
+		{Source: repoHostDir, Target: "/project", ReadOnly: false},
 		{Source: workHostDir, Target: "/work", ReadOnly: false},
 	}
 
