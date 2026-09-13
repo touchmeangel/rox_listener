@@ -331,11 +331,12 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		}
 	}
 
-	pw := &Writer{prefix: spec.LogPrefix, quiet: spec.Quiet, live: spec.Live}
-	var stdout, stderr io.Writer = pw, pw
+	stdoutWriter := &Writer{prefix: spec.LogPrefix, quiet: spec.Quiet, live: spec.Live}
+	stderrWriter := &Writer{prefix: spec.LogPrefix, quiet: spec.Quiet, live: spec.Live}
+	var stdout, stderr io.Writer = stdoutWriter, stderrWriter
 	if spec.LogFile != nil {
-		stdout = io.MultiWriter(pw, spec.LogFile)
-		stderr = stdout
+		stdout = io.MultiWriter(stdoutWriter, spec.LogFile)
+		stderr = io.MultiWriter(stderrWriter, spec.LogFile)
 	}
 
 	task, err := cont.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, stdout, stderr)))
