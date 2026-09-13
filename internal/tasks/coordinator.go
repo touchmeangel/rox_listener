@@ -38,22 +38,16 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 		return nil, fmt.Errorf("preparing output file: %w", err)
 	}
 
-	repoHostDir := filepath.Join(scratchDir, "repo")
-	if err := os.MkdirAll(repoHostDir, 0o755); err != nil {
-		return nil, fmt.Errorf("creating local repo dir: %w", err)
-	}
-	if err := storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, repoHostDir); err != nil {
-		return nil, fmt.Errorf("downloading workspace: %w", err)
-	}
-
 	workHostDir := filepath.Join(scratchDir, "work")
 	if err := os.MkdirAll(workHostDir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating local work dir: %w", err)
 	}
+	if err := storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, workHostDir); err != nil {
+		return nil, fmt.Errorf("downloading workspace: %w", err)
+	}
 
 	cmd := []string{
 		"coordinator",
-		"--repo-path", "/project",
 		"--work-path", "/work",
 		"--output", "/app/coordinator_results.json",
 		"--debug", "/app/debug.log",
@@ -63,7 +57,6 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 		{Source: configFile, Target: "/app/config.json", ReadOnly: true},
 		{Source: debugLog, Target: "/app/debug.log", ReadOnly: false},
 		{Source: outputHostPath, Target: "/app/coordinator_results.json", ReadOnly: false},
-		{Source: repoHostDir, Target: "/project", ReadOnly: false},
 		{Source: workHostDir, Target: "/work", ReadOnly: false},
 	}
 

@@ -14,8 +14,12 @@ import (
 )
 
 func DownloadWorkspace(ctx context.Context, s3Client *s3.Client, bucket, workspacePrefix, targetDir string) error {
+	if strings.TrimSpace(workspacePrefix) == "" {
+		return fmt.Errorf("workspacePrefix must not be empty — refusing to list and download the entire bucket")
+	}
+
 	prefix := workspacePrefix
-	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
 
