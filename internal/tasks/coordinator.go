@@ -15,6 +15,7 @@ import (
 
 func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, appConfig json.RawMessage, agentEnv []string, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
 	runID := req.GetRunId()
+	userID := req.GetUserId()
 	workspaceName := req.GetWorkspaceName()
 
 	scratchDir, cleanup, err := newWorkspace(workDir)
@@ -42,7 +43,7 @@ func RunCoordinator(ctx context.Context, client *containerd.Client, runtime stri
 	if err := os.MkdirAll(workHostDir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating local work dir: %w", err)
 	}
-	if err := storage.DownloadWorkspace(ctx, s3Client, bucket, workspaceName, workHostDir); err != nil {
+	if err := storage.DownloadWorkspace(ctx, s3Client, bucket, userID, workspaceName, workHostDir); err != nil {
 		return nil, fmt.Errorf("downloading workspace: %w", err)
 	}
 

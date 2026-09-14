@@ -13,12 +13,19 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func DownloadWorkspace(ctx context.Context, s3Client *s3.Client, bucket, workspacePrefix, targetDir string) error {
+func userPath(userID string) string {
+	return "users/" + userID + "/"
+}
+
+func DownloadWorkspace(ctx context.Context, s3Client *s3.Client, bucket, userID, workspacePrefix, targetDir string) error {
+	if strings.TrimSpace(userID) == "" {
+		return fmt.Errorf("userID must not be empty — refusing to list without it")
+	}
 	if strings.TrimSpace(workspacePrefix) == "" {
 		return fmt.Errorf("workspacePrefix must not be empty — refusing to list and download the entire bucket")
 	}
 
-	prefix := workspacePrefix
+	prefix := userPath(userID) + workspacePrefix
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
