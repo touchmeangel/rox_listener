@@ -42,6 +42,7 @@ type Client struct {
 	dockerHubUsername string
 	dockerHubToken    string
 	pullGroup         singleflight.Group
+	netMgr            *networkManager
 }
 
 type Option func(*Client)
@@ -72,7 +73,12 @@ func NewWithOptions(socket, namespace string, opts ...Option) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connecting to containerd at %s: %w", socket, err)
 	}
-	c := &Client{cli: cli, namespace: namespace, logger: slog.Default()}
+	netMgr, err := newNetworkManager()
+	if err != nil {
+		_ = cli.Close()
+		return nil, fmt.Errorf("setting up sandbox networking: %w", err)
+	}
+	c := &Client{cli: cli, namespace: namespace, logger: slog.Default(), netMgr: netMgr}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -289,19 +295,35 @@ func (c *Client) Run(parent context.Context, spec RunSpec) (int64, error) {
 		return -1, fmt.Errorf("resolving entrypoint for %s: %w", spec.Image, err)
 	}
 
-	mounts, hostsCleanup, err := buildMounts(spec.Mounts, spec.ExtraHosts)
+	mounts, mountsCleanup, err := buildMounts(spec.Mounts, spec.ExtraHosts)
 	if err != nil {
 		return -1, fmt.Errorf("preparing mounts: %w", err)
 	}
-	if hostsCleanup != nil {
-		defer hostsCleanup()
+	if mountsCleanup != nil {
+		defer mountsCleanup()
 	}
+
+	netnsPath, err := c.netMgr.setup(ctx, spec.Name)
+	if err != nil {
+		return -1, fmt.Errorf("setting up sandbox network: %w", err)
+	}
+	defer func() {
+		teardownCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cancel()
+		if err := c.netMgr.teardown(teardownCtx, spec.Name, netnsPath); err != nil {
+			c.logger.Error("cleanup: failed to tear down sandbox network", "container", spec.Name, "error", err)
+		}
+	}()
 
 	specOpts := []oci.SpecOpts{
 		oci.WithImageConfig(img),
 		oci.WithProcessArgs(args...),
 		oci.WithEnv(spec.Env),
 		oci.WithMounts(mounts),
+		oci.WithLinuxNamespace(specs.LinuxNamespace{
+			Type: specs.NetworkNamespace,
+			Path: netnsPath,
+		}),
 	}
 
 	containerOpts := []containerd.NewContainerOpts{
@@ -470,7 +492,7 @@ func (c *Client) resolveArgs(ctx context.Context, img containerd.Image, cmd []st
 }
 
 func buildMounts(mounts []Mount, extraHosts []string) ([]specs.Mount, func(), error) {
-	out := make([]specs.Mount, 0, len(mounts)+1)
+	out := make([]specs.Mount, 0, len(mounts)+2)
 	for _, m := range mounts {
 		opts := []string{"rbind"}
 		if m.ReadOnly {
@@ -486,13 +508,20 @@ func buildMounts(mounts []Mount, extraHosts []string) ([]specs.Mount, func(), er
 		})
 	}
 
-	var cleanup func()
+	var cleanupFiles []string
+	cleanup := func() {
+		for _, p := range cleanupFiles {
+			_ = os.Remove(p)
+		}
+	}
+
 	if len(extraHosts) > 0 {
 		hostsPath, err := writeExtraHostsFile(extraHosts)
 		if err != nil {
+			cleanup()
 			return nil, nil, fmt.Errorf("writing extra hosts file: %w", err)
 		}
-		cleanup = func() { _ = os.Remove(hostsPath) }
+		cleanupFiles = append(cleanupFiles, hostsPath)
 		out = append(out, specs.Mount{
 			Destination: "/etc/hosts",
 			Type:        "bind",
@@ -501,7 +530,34 @@ func buildMounts(mounts []Mount, extraHosts []string) ([]specs.Mount, func(), er
 		})
 	}
 
+	resolvPath, err := writeResolvConfFile()
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("writing resolv.conf: %w", err)
+	}
+	cleanupFiles = append(cleanupFiles, resolvPath)
+	out = append(out, specs.Mount{
+		Destination: "/etc/resolv.conf",
+		Type:        "bind",
+		Source:      resolvPath,
+		Options:     []string{"rbind", "ro"},
+	})
+
 	return out, cleanup, nil
+}
+
+func writeResolvConfFile() (string, error) {
+	f, err := os.CreateTemp("", "rox-resolv-*")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	// The CNI bridge's ipMasq NATs outbound traffic, so any public resolver
+	// reachable from the host works — two independent ones for reliability.
+	if _, err := f.WriteString("nameserver 1.1.1.1\nnameserver 8.8.8.8\n"); err != nil {
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 func writeExtraHostsFile(extraHosts []string) (string, error) {
