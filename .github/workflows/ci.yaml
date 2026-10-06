@@ -13,30 +13,88 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: "1.24"
           cache: true
 
-      - uses: golangci/golangci-lint-action@v9
+      - name: Go environment
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "=== Go version ==="
+          go version
+
+          echo "=== Go environment ==="
+          go env GOROOT
+          go env GOPATH
+          go env GOMOD
+          go env GOOS
+          go env GOARCH
+          go env GOVERSION
+
+          echo "=== Git status ==="
+          git status --short
+
+          echo "=== Go modules ==="
+          go list -m all
+
+      - name: Download modules
+        shell: bash
+        run: |
+          set -euxo pipefail
+          go mod download
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          files="$(gofmt -l .)"
+
+          if [[ -n "$files" ]]; then
+            echo "::error title=Go formatting failed::The following files are not formatted with gofmt:"
+            echo "$files"
+
+            while IFS= read -r file; do
+              echo "::group::gofmt diff - $file"
+              gofmt -d "$file"
+              echo "::endgroup::"
+            done <<< "$files"
+
+            echo
+            echo "Run locally:"
+            echo "  gofmt -w ."
+
+            exit 1
+          fi
+
+          echo "All Go files are correctly formatted."
+
+      - name: Go Vet
+        shell: bash
+        run: |
+          set -euxo pipefail
+          go vet ./...
+
+      - name: GolangCI Lint
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12
 
-      - name: Download modules
-        run: go mod download
-
-      - name: Check formatting
-        run: |
-          test -z "$(gofmt -l .)" || \
-          (echo "Code is not formatted"; gofmt -l .; exit 1)
-
-      - name: Go Vet
-        run: go vet ./...
-
       - name: Build
-        run: go build ./...
+        shell: bash
+        run: |
+          set -euxo pipefail
+          go build -v ./...
 
       - name: Test
-        run: go test -race -count=1 ./...
+        shell: bash
+        run: |
+          set -euxo pipefail
+          go test -v -race -count=1 ./...
