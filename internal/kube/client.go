@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -123,12 +125,45 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (*Result, error) {
 	return c.collect(ctx, spec.Name, failedReason)
 }
 
-func (c *Client) build(spec RunSpec) (*corev1.Secret, *batchv1.Job, error) {
-	if n := len(spec.Name); n == 0 || n > 63 {
-		return nil, nil, fmt.Errorf("task name %q must be 1-63 characters", spec.Name)
+func validate(spec RunSpec) error {
+	if errs := validation.IsDNS1123Label(spec.Name); len(errs) > 0 { // also enforces <=63 chars
+		return fmt.Errorf("task name %q: %s", spec.Name, strings.Join(errs, "; "))
 	}
 	if spec.Image == "" {
-		return nil, nil, fmt.Errorf("image is required")
+		return fmt.Errorf("image is required")
+	}
+	envs := slices.Clone(spec.Env)
+	for _, s := range spec.Init {
+		if errs := validation.IsDNS1123Label(s.Name); len(errs) > 0 {
+			return fmt.Errorf("init step name %q: %s", s.Name, strings.Join(errs, "; "))
+		}
+		envs = append(envs, s.Env...)
+	}
+	for _, kv := range envs {
+		if name, _, ok := strings.Cut(kv, "="); ok {
+			if errs := validation.IsEnvVarName(name); len(errs) > 0 {
+				return fmt.Errorf("env var %q: %s", name, strings.Join(errs, "; "))
+			}
+		}
+	}
+	seen := map[string]bool{}
+	paths := slices.Clone(spec.Scratch)
+	for _, f := range spec.Files {
+		paths = append(paths, f.Path)
+	}
+	for _, p := range paths {
+		if seen[p] {
+			return fmt.Errorf("mount path %q is used twice", p)
+		}
+		seen[p] = true
+	}
+	return nil
+}
+
+func (c *Client) build(spec RunSpec) (*corev1.Secret, *batchv1.Job, error) {
+	err := validate(spec)
+	if err != nil {
+		return nil, nil, err
 	}
 	res, err := resources(spec.CPU, spec.Memory)
 	if err != nil {
