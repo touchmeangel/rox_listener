@@ -137,7 +137,7 @@ func (c *Client) build(spec RunSpec) (*corev1.Secret, *batchv1.Job, error) {
 
 	labels := map[string]string{
 		"app.kubernetes.io/managed-by": "rox-listener",
-		"rox.io/role":                  "agent", // hook for a NetworkPolicy later
+		"rox.io/role":                  "agent",
 		labelTask:                      spec.Name,
 	}
 
