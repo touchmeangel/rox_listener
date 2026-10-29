@@ -2,14 +2,11 @@ package rpc
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/touchmeangel/rox_listener/internal/containerd"
 	"github.com/touchmeangel/rox_listener/internal/tasks"
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 
@@ -21,24 +18,12 @@ import (
 type Server struct {
 	taskpb.UnimplementedTaskServiceServer
 
-	client    *containerd.Client
-	runtime   string
-	s3Client  *s3.Client
-	s3Bucket  string
-	workDir   string
-	appConfig json.RawMessage
-	agentEnv  []string
+	runner *tasks.Runner
 }
 
-func NewServer(client *containerd.Client, runtime string, s3Client *s3.Client, s3Bucket, workDir string, appConfig json.RawMessage, agentEnv []string) *Server {
+func NewServer(runner *tasks.Runner) *Server {
 	return &Server{
-		client:    client,
-		runtime:   runtime,
-		s3Client:  s3Client,
-		s3Bucket:  s3Bucket,
-		workDir:   workDir,
-		appConfig: appConfig,
-		agentEnv:  agentEnv,
+		runner: runner,
 	}
 }
 

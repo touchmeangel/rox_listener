@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
+	"time"
 
-	"github.com/touchmeangel/rox_listener/internal/containerd"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/touchmeangel/rox_listener/internal/kube"
+	"github.com/touchmeangel/rox_listener/internal/storage"
 )
-
-const Image = "touchmeangel/rox_agent:latest"
 
 type PermanentError struct{ Err error }
 
@@ -25,13 +25,23 @@ func Permanent(err error) error {
 	return &PermanentError{Err: err}
 }
 
-type Runner[TTask any] func(ctx context.Context, client *containerd.Client, runtime string, task TTask) (containerResult, error)
+type Runner struct {
+	Kube          *kube.Client
+	S3            *s3.Client
+	Bucket        string
+	AgentImage    string
+	ListenerImage string
+	AppConfig     json.RawMessage
+	AgentEnv      []string
+	S3Env         []string
+	CPU, Memory   string
+	Timeout       time.Duration
+}
 
-type containerResult struct {
-	RunID    string
-	ExitCode int64
-	Output   json.RawMessage
-	Error    string
+type params struct {
+	Kind, UserID, Workspace, ResultKey string
+	Args                               []string
+	Files                              []kube.File
 }
 
 func randomID() string {
@@ -40,50 +50,38 @@ func randomID() string {
 	return hex.EncodeToString(b)
 }
 
-func touchEmpty(path string) error {
-	f, err := os.Create(path)
+func (r *Runner) run(ctx context.Context, p params) (output []byte, errMsg string, err error) {
+	putURL, err := storage.PresignPut(ctx, r.S3, r.Bucket, p.ResultKey, r.Timeout+10*time.Minute)
 	if err != nil {
-		return err
+		return nil, "", fmt.Errorf("presigning result upload: %w", err)
 	}
-	return f.Close()
-}
 
-func newWorkspace(baseDir string) (dir string, cleanup func(), err error) {
-	if err := os.MkdirAll(baseDir, 0o755); err != nil {
-		return "", nil, fmt.Errorf("ensuring work base dir exists: %w", err)
-	}
-	dir, err = os.MkdirTemp(baseDir, "rox-work-*")
-	if err != nil {
-		return "", nil, fmt.Errorf("creating workspace: %w", err)
-	}
-	return dir, func() { _ = os.RemoveAll(dir) }, nil
-}
-
-func run(ctx context.Context, client *containerd.Client, runtime, name string, cmd []string, mounts []containerd.Mount, env []string, outputHostPath string, populate containerd.PopulateFunc) (containerResult, error) {
-	result := containerResult{RunID: name}
-
-	exitCode, runErr := client.Run(ctx, containerd.RunSpec{
-		Image:    Image,
-		Name:     name,
-		Cmd:      cmd,
-		Env:      env,
-		Runtime:  runtime,
-		Mounts:   mounts,
-		Populate: populate,
-		Quiet:    false,
+	res, err := r.Kube.Run(ctx, kube.RunSpec{
+		Name:    fmt.Sprintf("rox-%s-%s", p.Kind, randomID()),
+		Image:   r.AgentImage,
+		Args:    p.Args,
+		Env:     append(append([]string{}, r.AgentEnv...), "ROX_RESULT_PUT_URL="+putURL),
+		Files:   append([]kube.File{{Path: "/app/config.json", Content: r.AppConfig}}, p.Files...),
+		Scratch: []string{"/work", "/out"},
+		Init: []kube.InitStep{{
+			Name:  "fetch-workspace",
+			Image: r.ListenerImage,
+			Args: []string{"fetch-workspace", "--bucket", r.Bucket,
+				"--user", p.UserID, "--workspace", p.Workspace, "--dest", "/work"},
+			Env: r.S3Env,
+		}},
+		Timeout: r.Timeout, CPU: r.CPU, Memory: r.Memory,
 	})
-	result.ExitCode = exitCode
-	if runErr != nil {
-		return result, fmt.Errorf("running container: %w", runErr)
+	if err != nil {
+		return nil, "", err // infrastructure failure: retry-able
 	}
 
-	data, readErr := os.ReadFile(outputHostPath)
-	if readErr != nil {
-		result.Error = fmt.Sprintf("could not read output file: %v", readErr)
-		return result, nil
+	output, err = storage.GetObject(ctx, r.S3, r.Bucket, p.ResultKey) // nil if the agent never uploaded
+	if err != nil {
+		return nil, "", fmt.Errorf("reading result: %w", err)
 	}
-	if len(data) > 0 {
-		result.Output = json.RawMessage(data)
+	if res.ExitCode == 0 {
+		return output, "", nil
 	}
-	return result, nil
+	return output, fmt.Sprintf("agent exited %d (%s)\n%s", res.ExitCode, res.Reason, res.Logs), nil
 }

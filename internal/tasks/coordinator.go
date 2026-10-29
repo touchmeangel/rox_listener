@@ -2,79 +2,24 @@ package tasks
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/touchmeangel/rox_listener/internal/containerd"
-	"github.com/touchmeangel/rox_listener/internal/storage"
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 )
 
-func RunCoordinator(ctx context.Context, client *containerd.Client, runtime string, s3Client *s3.Client, bucket, workDir string, appConfig json.RawMessage, agentEnv []string, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
+func (r *Runner) RunCoordinator(ctx context.Context, req *taskpb.RunCoordinatorRequest) (*taskpb.RunCoordinatorResponse, error) {
 	runID := req.GetRunId()
 	userID := req.GetUserId()
 	workspaceName := req.GetWorkspaceName()
 
-	scratchDir, cleanup, err := newWorkspace(workDir)
+	out, errMsg, err := r.run(ctx, params{
+		Kind: "coordinator", UserID: userID, Workspace: workspaceName,
+		ResultKey: fmt.Sprintf("results/%s/%s/coordinator.json", userID, runID),
+		Args: []string{"coordinator", "--work-path", "/work",
+			"--output", "/out/coordinator_results.json", "--debug", "/out/debug.log"},
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer cleanup()
-
-	configFile := filepath.Join(scratchDir, "config.json")
-	if err := os.WriteFile(configFile, appConfig, 0o644); err != nil {
-		return nil, fmt.Errorf("writing app config: %w", err)
-	}
-
-	debugLog := filepath.Join(scratchDir, "debug.log")
-	if err := touchEmpty(debugLog); err != nil {
-		return nil, fmt.Errorf("preparing debug log: %w", err)
-	}
-
-	outputHostPath := filepath.Join(scratchDir, "coordinator_results.json")
-	if err := touchEmpty(outputHostPath); err != nil {
-		return nil, fmt.Errorf("preparing output file: %w", err)
-	}
-
-	workHostDir := filepath.Join(scratchDir, "work")
-	if err := os.MkdirAll(workHostDir, 0o755); err != nil {
-		return nil, fmt.Errorf("creating local work dir: %w", err)
-	}
-	if err := storage.DownloadWorkspace(ctx, s3Client, bucket, userID, workspaceName, workHostDir); err != nil {
-		return nil, fmt.Errorf("downloading workspace: %w", err)
-	}
-
-	cmd := []string{
-		"coordinator",
-		"--work-path", "/work",
-		"--output", "/app/coordinator_results.json",
-		"--debug", "/app/debug.log",
-	}
-
-	mounts := []containerd.Mount{
-		{Source: configFile, Target: "/app/config.json", ReadOnly: true},
-		{Source: debugLog, Target: "/app/debug.log", ReadOnly: false},
-		{Source: outputHostPath, Target: "/app/coordinator_results.json", ReadOnly: false},
-		{Source: workHostDir, Target: "/work", ReadOnly: false},
-	}
-
-	name := fmt.Sprintf("rox-coordinator-%s", randomID())
-	result, err := run(ctx, client, runtime, name, cmd, mounts, agentEnv, outputHostPath, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	errMsg := result.Error
-	if result.ExitCode == 0 {
-		errMsg = ""
-	}
-
-	return &taskpb.RunCoordinatorResponse{
-		RunId:  runID,
-		Output: result.Output,
-		Error:  errMsg,
-	}, nil
+	return &taskpb.RunCoordinatorResponse{RunId: req.GetRunId(), Output: out, Error: errMsg}, nil
 }

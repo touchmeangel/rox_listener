@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/touchmeangel/rox_listener/internal/tasks"
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,7 +23,7 @@ func (s *Server) RunWorker(ctx context.Context, req *taskpb.RunWorkerRequest) (*
 		return nil, status.Error(codes.InvalidArgument, "mission must be valid, non-empty JSON")
 	}
 
-	result, err := tasks.RunWorker(ctx, s.client, s.runtime, s.s3Client, s.s3Bucket, s.workDir, s.appConfig, s.agentEnv, req)
+	result, err := s.runner.RunWorker(ctx, req)
 	if err != nil {
 		return nil, toStatus(err)
 	}
