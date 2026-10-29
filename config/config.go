@@ -2,100 +2,164 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
+// S3 is everything needed to talk to object storage. It is shared by the
+// listener and by the fetch-workspace init container.
+type S3 struct {
+	Endpoint        string
+	Region          string
+	AccessKeyID     string
+	SecretAccessKey string
+	Bucket          string
+}
+
+func (s S3) Env() []string {
+	return []string{
+		"S3_ENDPOINT=" + s.Endpoint,
+		"S3_REGION=" + s.Region,
+		"S3_ACCESS_KEY_ID=" + s.AccessKeyID,
+		"S3_SECRET_ACCESS_KEY=" + s.SecretAccessKey,
+		"S3_BUCKET=" + s.Bucket,
+	}
+}
+
 type Config struct {
-	Runtime            string
 	ListenAddr         string
 	MaxConcurrentTasks int
 
-	S3Endpoint        string
-	S3Region          string
-	S3AccessKeyID     string
-	S3SecretAccessKey string
-	S3Bucket          string
+	S3 S3
 
-	DockerHubUsername string
-	DockerHubToken    string
+	Kubeconfig    string
+	Namespace     string
+	RuntimeClass  string
+	AgentImage    string
+	ListenerImage string
+	TaskCPU       string
+	TaskMemory    string
+	TaskTimeout   time.Duration
 
-	WorkDir string
+	AppConfig json.RawMessage
+	AgentEnv  []string
+}
 
-	AppConfigPath string
-	AppConfig     json.RawMessage
+type reader struct {
+	missing []string
+	invalid []string
+}
 
-	AgentEnvPath string
-	AgentEnv     []string
+func (r *reader) req(name string) string {
+	v := os.Getenv(name)
+	if v == "" {
+		r.missing = append(r.missing, name)
+	}
+	return v
+}
+
+func (r *reader) opt(name, def string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return def
+}
+
+func (r *reader) positiveInt(name string) int {
+	raw := r.req(name)
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		r.invalid = append(r.invalid, fmt.Sprintf("%s must be a positive integer, got %q", name, raw))
+		return 0
+	}
+	return n
+}
+
+func (r *reader) duration(name string, def time.Duration) time.Duration {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return def
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		r.invalid = append(r.invalid, fmt.Sprintf("%s must be a positive duration like 2h, got %q", name, raw))
+		return def
+	}
+	return d
+}
+
+func (r *reader) err() error {
+	var parts []string
+	if len(r.missing) > 0 {
+		parts = append(parts, "missing required config: "+strings.Join(r.missing, ", "))
+	}
+	parts = append(parts, r.invalid...)
+	if len(parts) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(parts, "; "))
+}
+
+func loadS3(r *reader) S3 {
+	return S3{
+		Endpoint:        r.req("S3_ENDPOINT"),
+		Region:          r.req("S3_REGION"),
+		AccessKeyID:     r.req("S3_ACCESS_KEY_ID"),
+		SecretAccessKey: r.req("S3_SECRET_ACCESS_KEY"),
+		Bucket:          r.req("S3_BUCKET"),
+	}
+}
+
+func LoadS3() (S3, error) {
+	var r reader
+	s := loadS3(&r)
+	return s, r.err()
 }
 
 func LoadConfig() (Config, error) {
+	var r reader
 	cfg := Config{
-		Runtime:           os.Getenv("CONTAINER_RUNTIME"),
-		ListenAddr:        os.Getenv("LISTEN_ADDRESS"),
-		S3Endpoint:        os.Getenv("S3_ENDPOINT"),
-		S3Region:          os.Getenv("S3_REGION"),
-		S3AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
-		S3SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
-		S3Bucket:          os.Getenv("S3_BUCKET"),
-		DockerHubUsername: os.Getenv("DOCKERHUB_USERNAME"),
-		DockerHubToken:    os.Getenv("DOCKERHUB_TOKEN"),
-		WorkDir:           os.Getenv("WORK_DIR"),
-		AppConfigPath:     os.Getenv("APP_CONFIG_PATH"),
-		AgentEnvPath:      os.Getenv("AGENT_ENV_PATH"),
+		ListenAddr:         r.req("LISTEN_ADDRESS"),
+		MaxConcurrentTasks: r.positiveInt("MAX_CONCURRENT_TASKS"),
+		S3:                 loadS3(&r),
+		Kubeconfig:         os.Getenv("KUBECONFIG"),
+		Namespace:          r.opt("KUBE_NAMESPACE", "rox"),
+		RuntimeClass:       os.Getenv("RUNTIME_CLASS"),
+		AgentImage:         r.req("AGENT_IMAGE"),
+		ListenerImage:      r.req("LISTENER_IMAGE"),
+		TaskCPU:            os.Getenv("TASK_CPU"),
+		TaskMemory:         os.Getenv("TASK_MEMORY"),
+		TaskTimeout:        r.duration("TASK_TIMEOUT", 2*time.Hour),
+	}
+	appConfigPath := r.req("APP_CONFIG_PATH")
+	agentEnvPath := r.req("AGENT_ENV_PATH")
+	if err := r.err(); err != nil {
+		return cfg, err
 	}
 
-	var missing []string
-	checkReq := func(name, val string) {
-		if val == "" {
-			missing = append(missing, name)
-		}
-	}
-
-	checkReq("LISTEN_ADDRESS", cfg.ListenAddr)
-	checkReq("S3_ENDPOINT", cfg.S3Endpoint)
-	checkReq("S3_REGION", cfg.S3Region)
-	checkReq("S3_ACCESS_KEY_ID", cfg.S3AccessKeyID)
-	checkReq("S3_SECRET_ACCESS_KEY", cfg.S3SecretAccessKey)
-	checkReq("S3_BUCKET", cfg.S3Bucket)
-	checkReq("DOCKERHUB_USERNAME", cfg.DockerHubUsername)
-	checkReq("DOCKERHUB_TOKEN", cfg.DockerHubToken)
-	checkReq("WORK_DIR", cfg.WorkDir)
-	checkReq("APP_CONFIG_PATH", cfg.AppConfigPath)
-	checkReq("AGENT_ENV_PATH", cfg.AgentEnvPath)
-
-	raw := os.Getenv("MAX_CONCURRENT_TASKS")
-	if raw == "" {
-		missing = append(missing, "MAX_CONCURRENT_TASKS")
-	} else if n, err := strconv.Atoi(raw); err != nil || n <= 0 {
-		return cfg, fmt.Errorf("MAX_CONCURRENT_TASKS must be a positive integer, got %q", raw)
-	} else {
-		cfg.MaxConcurrentTasks = n
-	}
-
-	if len(missing) > 0 {
-		return cfg, fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
-	}
-
-	data, err := os.ReadFile(cfg.AppConfigPath)
+	data, err := os.ReadFile(appConfigPath)
 	if err != nil {
-		return cfg, fmt.Errorf("reading APP_CONFIG_PATH %q: %w", cfg.AppConfigPath, err)
+		return cfg, fmt.Errorf("reading APP_CONFIG_PATH %q: %w", appConfigPath, err)
 	}
 	if !json.Valid(data) {
-		return cfg, fmt.Errorf("APP_CONFIG_PATH %q does not contain valid JSON", cfg.AppConfigPath)
+		return cfg, fmt.Errorf("APP_CONFIG_PATH %q does not contain valid JSON", appConfigPath)
 	}
 	cfg.AppConfig = json.RawMessage(data)
 
-	agentEnv, err := parseEnvFile(cfg.AgentEnvPath)
+	agentEnv, err := parseEnvFile(agentEnvPath)
 	if err != nil {
-		return cfg, fmt.Errorf("reading AGENT_ENV_PATH %q: %w", cfg.AgentEnvPath, err)
+		return cfg, fmt.Errorf("reading AGENT_ENV_PATH %q: %w", agentEnvPath, err)
 	}
 	cfg.AgentEnv = agentEnv
-
 	return cfg, nil
 }
 
