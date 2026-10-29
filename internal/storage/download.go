@@ -7,67 +7,91 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"golang.org/x/sync/errgroup"
 )
 
-func userPath(userID string) string {
-	return "users/" + userID + "/"
+const downloadConcurrency = 32
+
+func WorkspacePrefix(userID, workspaceName string) string {
+	return "users/" + userID + "/" + workspaceName + "/"
 }
 
-func DownloadWorkspace(ctx context.Context, s3Client *s3.Client, bucket, userID, workspacePrefix, targetDir string) error {
-	if strings.TrimSpace(userID) == "" {
-		return fmt.Errorf("userID must not be empty — refusing to list without it")
+func DownloadWorkspace(ctx context.Context, client *s3.Client, bucket, userID, workspaceName, targetDir string) (int, error) {
+	if userID == "" || workspaceName == "" || strings.Contains(userID, "/") || strings.Contains(workspaceName, "/") {
+		return 0, fmt.Errorf("invalid user id or workspace name")
 	}
-	if strings.TrimSpace(workspacePrefix) == "" {
-		return fmt.Errorf("workspacePrefix must not be empty — refusing to list and download the entire bucket")
+	root, err := filepath.Abs(targetDir)
+	if err != nil {
+		return 0, fmt.Errorf("resolving target dir %q: %w", targetDir, err)
 	}
+	prefix := WorkspacePrefix(userID, workspaceName)
 
-	prefix := userPath(userID) + workspacePrefix
-	if !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
-	}
+	var downloaded atomic.Int64
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(downloadConcurrency)
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(32)
-
-	paginator := s3.NewListObjectsV2Paginator(s3Client, &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket),
-		Prefix: aws.String(prefix),
-	})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("listing workspace objects under %s: %w", prefix, err)
-		}
-		for _, obj := range page.Contents {
-			key := aws.ToString(obj.Key)
-			if strings.HasSuffix(key, "/") {
-				continue // folder marker, nothing to download
+	listErr := func() error {
+		paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
+			Bucket: aws.String(bucket),
+			Prefix: aws.String(prefix),
+		})
+		for paginator.HasMorePages() {
+			page, err := paginator.NextPage(gctx)
+			if err != nil {
+				return err
 			}
-			relPath := strings.TrimPrefix(key, prefix)
-			destPath := filepath.Join(targetDir, filepath.FromSlash(relPath))
-
-			g.Go(func() error {
-				return downloadOneObject(ctx, s3Client, bucket, key, destPath)
-			})
+			for _, obj := range page.Contents {
+				key := aws.ToString(obj.Key)
+				if strings.HasSuffix(key, "/") {
+					continue
+				}
+				dest, err := safeJoin(root, strings.TrimPrefix(key, prefix))
+				if err != nil {
+					return fmt.Errorf("object %q: %w", key, err)
+				}
+				g.Go(func() error {
+					if err := downloadObject(gctx, client, bucket, key, dest); err != nil {
+						return err
+					}
+					downloaded.Add(1)
+					return nil
+				})
+			}
 		}
-	}
+		return nil
+	}()
 
 	if err := g.Wait(); err != nil {
-		return fmt.Errorf("downloading workspace %s: %w", prefix, err)
+		return int(downloaded.Load()), fmt.Errorf("downloading workspace %s: %w", prefix, err)
 	}
-	return nil
+	if listErr != nil {
+		return int(downloaded.Load()), fmt.Errorf("listing workspace %s: %w", prefix, listErr)
+	}
+	n := int(downloaded.Load())
+	if n == 0 {
+		return 0, fmt.Errorf("no files found under %s (was the workspace uploaded?)", prefix)
+	}
+	return n, nil
 }
 
-func downloadOneObject(ctx context.Context, s3Client *s3.Client, bucket, key, destPath string) error {
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+func safeJoin(root, rel string) (string, error) {
+	dest := filepath.Join(root, filepath.FromSlash(rel))
+	r, err := filepath.Rel(root, dest)
+	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes target directory")
+	}
+	return dest, nil
+}
+
+func downloadObject(ctx context.Context, client *s3.Client, bucket, key, dest string) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return fmt.Errorf("creating directory for %s: %w", key, err)
 	}
-
-	out, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+	out, err := client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -76,14 +100,16 @@ func downloadOneObject(ctx context.Context, s3Client *s3.Client, bucket, key, de
 	}
 	defer func() { _ = out.Body.Close() }()
 
-	f, err := os.Create(destPath)
+	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		return fmt.Errorf("creating %s: %w", destPath, err)
+		return fmt.Errorf("creating %s: %w", dest, err)
 	}
-	defer func() { _ = f.Close() }()
-
 	if _, err := io.Copy(f, out.Body); err != nil {
-		return fmt.Errorf("writing %s: %w", destPath, err)
+		_ = f.Close()
+		return fmt.Errorf("writing %s: %w", dest, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing %s: %w", dest, err)
 	}
 	return nil
 }
