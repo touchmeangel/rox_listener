@@ -10,31 +10,44 @@ import (
 	"time"
 
 	"github.com/touchmeangel/rox_listener/config"
-	"github.com/touchmeangel/rox_listener/internal/containerd"
+	"github.com/touchmeangel/rox_listener/internal/kube"
 	"github.com/touchmeangel/rox_listener/internal/rpc"
 	"github.com/touchmeangel/rox_listener/internal/storage"
+	"github.com/touchmeangel/rox_listener/internal/tasks"
 	taskpb "github.com/touchmeangel/rox_proto/rox/task/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "fetch-workspace" {
+		runFetchWorkspace(os.Args[2:])
+		return
+	}
+	serve()
+}
+
+func serve() {
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		logger.Error("config read error", "error", err)
 		return
 	}
-
-	client, err := containerd.New(containerd.WithRegistryCredentials(cfg.DockerHubUsername, cfg.DockerHubToken))
+	s3cfg, err := config.LoadS3()
 	if err != nil {
-		logger.Error("containerd client init failed", "error", err)
+		logger.Error("config read error", "error", err)
 		return
 	}
-	defer func() { _ = client.Close() }()
 
-	if err := client.ReapOrphans(context.Background()); err != nil {
-		logger.Warn("orphan container sweep had errors", "error", err)
+	kubeClient, err := kube.New(kube.Config{
+		Kubeconfig: cfg.Kubeconfig, Namespace: cfg.Namespace, RuntimeClass: cfg.RuntimeClass,
+	})
+	err = kubeClient.Ping(context.Background())
+	if err != nil {
+		logger.Error("kube ping failed", "config", cfg.Kubeconfig, "error", err)
+		return
 	}
 
 	lis, err := net.Listen("tcp", cfg.ListenAddr)
@@ -60,12 +73,19 @@ func main() {
 		),
 	)
 
-	s3, err := storage.NewS3Client(context.Background(), cfg.S3Endpoint, cfg.S3Region, cfg.S3AccessKeyID, cfg.S3SecretAccessKey)
+	s3, err := storage.NewS3Client(context.Background(), s3cfg.Endpoint, s3cfg.Region, s3cfg.AccessKeyID, s3cfg.SecretAccessKey)
 	if err != nil {
 		logger.Error("storage connection failed", "error", err)
 		return
 	}
-	srv := rpc.NewServer(client, cfg.Runtime, s3, cfg.S3Bucket, cfg.WorkDir, cfg.AppConfig, cfg.AgentEnv)
+	runner := &tasks.Runner{
+		Kube: kubeClient, S3: s3, Bucket: cfg.S3.Bucket,
+		AgentImage: cfg.AgentImage, ListenerImage: cfg.ListenerImage,
+		AppConfig: cfg.AppConfig, AgentEnv: cfg.AgentEnv,
+		S3Env: cfg.S3.Env(),
+		CPU:   cfg.TaskCPU, Memory: cfg.TaskMemory, Timeout: cfg.TaskTimeout,
+	}
+	srv := rpc.NewServer(runner)
 	taskpb.RegisterTaskServiceServer(grpcServer, srv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
