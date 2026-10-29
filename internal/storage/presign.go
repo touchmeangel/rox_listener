@@ -28,13 +28,6 @@ func GetObject(ctx context.Context, c *s3.Client, bucket, key string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	defer out.Body.Close()
+	defer func() { _ = out.Body.Close() }()
 	return io.ReadAll(out.Body)
 }
-
-// def _upload_result(path: str) -> None:
-//     url = os.environ.get("ROX_RESULT_PUT_URL")
-//     if not url:
-//         return  # local runs: keep writing to disk only
-//     req = urllib.request.Request(url, data=Path(path).read_bytes(), method="PUT")
-//     urllib.request.urlopen(req, timeout=60).read()

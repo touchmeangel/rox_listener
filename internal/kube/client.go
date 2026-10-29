@@ -369,7 +369,7 @@ func (c *Client) pods(ctx context.Context, name string) ([]corev1.Pod, error) {
 	}
 	items := list.Items
 	sort.Slice(items, func(i, j int) bool {
-		return items[i].CreationTimestamp.Time.After(items[j].CreationTimestamp.Time)
+		return items[i].CreationTimestamp.After(items[j].CreationTimestamp.Time)
 	})
 	return items, nil
 }
