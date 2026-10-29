@@ -4,97 +4,89 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
-          cache: true
+          go-version-file: go.mod
 
-      - name: Go environment
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          echo "=== Go version ==="
-          go version
-
-          echo "=== Go environment ==="
-          go env GOROOT
-          go env GOPATH
-          go env GOMOD
-          go env GOOS
-          go env GOARCH
-          go env GOVERSION
-
-          echo "=== Git status ==="
-          git status --short
-
-          echo "=== Go modules ==="
-          go list -m all
-
-      - name: Download modules
-        shell: bash
-        run: |
-          set -euxo pipefail
-          go mod download
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy -diff
 
       - name: Check formatting
         shell: bash
         run: |
           set -euo pipefail
-
           files="$(gofmt -l .)"
-
           if [[ -n "$files" ]]; then
-            echo "::error title=Go formatting failed::The following files are not formatted with gofmt:"
+            echo "::error title=gofmt::These files are not gofmt-formatted (run: gofmt -w .):"
             echo "$files"
-
-            while IFS= read -r file; do
-              echo "::group::gofmt diff - $file"
-              gofmt -d "$file"
-              echo "::endgroup::"
-            done <<< "$files"
-
-            echo
-            echo "Run locally:"
-            echo "  gofmt -w ."
-
+            gofmt -d .
             exit 1
           fi
-
           echo "All Go files are correctly formatted."
 
-      - name: Go Vet
-        shell: bash
-        run: |
-          set -euxo pipefail
-          go vet ./...
+      - name: Go vet
+        run: go vet -tags=integration ./...
 
       - name: GolangCI Lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12
 
-      - name: Build
-        shell: bash
-        run: |
-          set -euxo pipefail
-          go build -v ./...
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Test
-        shell: bash
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit tests
+        run: go test -race -count=1 -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -n 1
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install envtest binaries (kube-apiserver + etcd)
         run: |
-          set -euxo pipefail
-          go test -v -race -count=1 ./...
+          set -euo pipefail
+          CR_BRANCH="$(go list -m -f '{{ .Version }}' sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $2, $3}')"
+          K8S_MINOR="$(go list -m -f '{{ .Version }}' k8s.io/api | awk -F'[v.]' '{printf "1.%d", $3}')"
+          go install "sigs.k8s.io/controller-runtime/tools/setup-envtest@${CR_BRANCH}"
+          ASSETS="$("$(go env GOPATH)/bin/setup-envtest" use "${K8S_MINOR}.x" -p path)"
+          echo "KUBEBUILDER_ASSETS=${ASSETS}" >> "$GITHUB_ENV"
+
+      - name: Integration tests
+        env:
+          REQUIRE_INTEGRATION: "1"
+        run: go test -tags=integration -race -count=1 -run Integration ./...
