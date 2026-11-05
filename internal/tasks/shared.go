@@ -81,6 +81,9 @@ func (r *Runner) run(ctx context.Context, p params) (output []byte, errMsg strin
 		return nil, "", fmt.Errorf("reading result: %w", err)
 	}
 	if res.ExitCode == 0 {
+		if output == nil {
+			return nil, "agent exited 0 but its result was never uploaded", nil
+		}
 		return output, "", nil
 	}
 	return output, fmt.Sprintf("agent exited %d (%s)\n%s", res.ExitCode, res.Reason, res.Logs), nil
