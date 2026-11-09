@@ -202,7 +202,6 @@ func (c *Client) build(spec RunSpec) (*corev1.Secret, *batchv1.Job, error) {
 	for _, s := range spec.Init {
 		inits = append(inits, corev1.Container{
 			Name: s.Name, Image: s.Image, ImagePullPolicy: c.cfg.PullPolicy,
-			TTY:          true,
 			Args:         s.Args,
 			Env:          secretEnv(data, spec.Name, "init."+s.Name, s.Env),
 			VolumeMounts: scratchMounts,
@@ -211,6 +210,7 @@ func (c *Client) build(spec RunSpec) (*corev1.Secret, *batchv1.Job, error) {
 
 	agent := corev1.Container{
 		Name: agentName, Image: spec.Image, ImagePullPolicy: c.cfg.PullPolicy,
+		TTY:          true,
 		Args:         spec.Args,
 		Env:          secretEnv(data, spec.Name, agentName, spec.Env),
 		VolumeMounts: append(append([]corev1.VolumeMount{}, scratchMounts...), fileMounts...),
