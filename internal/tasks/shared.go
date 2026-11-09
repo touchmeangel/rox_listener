@@ -66,7 +66,7 @@ func (r *Runner) run(ctx context.Context, p params) (output []byte, errMsg strin
 		Init: []kube.InitStep{{
 			Name:  "fetch-workspace",
 			Image: r.ListenerImage,
-			Args: []string{"fetch-workspace", "--bucket", r.Bucket,
+			Args: []string{"fetch-workspace",
 				"--user", p.UserID, "--workspace", p.Workspace, "--dest", "/work"},
 			Env: r.S3Env,
 		}},
